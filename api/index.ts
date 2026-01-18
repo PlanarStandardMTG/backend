@@ -1,4 +1,4 @@
-import { buildServer } from "./server.js";
+import { buildServer } from "../src/server.js";
 
 const app = buildServer();
 
