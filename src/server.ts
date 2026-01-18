@@ -10,7 +10,16 @@ import { dashboardRoutes } from "./routes/dashboard.js";
 export function buildServer() {
     const app = Fastify();
 
-    app.register(cors);
+    app.register(cors, {
+        origin: [
+            "http://localhost:5173",
+            "https://planarstandardmtg.vercel.app/"
+        ],
+        methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "Authorization"],
+        credentials: true
+    });
+
     app.register(prismaPlugin);
     app.register(authPlugin);
     app.register(authRoutes, { prefix: "/api/auth" });
