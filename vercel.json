@@ -1,8 +1,19 @@
 {
   "version": 2,
   "outputDirectory": "dist",
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/src/index.ts?path=$1" },
+  "rewrites": [
+    { "src": "/api/(.*)", "dest": "/src/index.ts" },
     { "src": "/(.*)", "dest": "/src/index.ts" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "https://planarstandardmtg.vercel.app" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, PUT, DELETE, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" },
+        { "key": "Access-Control-Allow-Credentials", "value": "true" }
+      ]
+    }
   ]
 }
