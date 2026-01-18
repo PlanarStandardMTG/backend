@@ -13,11 +13,13 @@ export function buildServer() {
     app.register(cors, {
         origin: [
             "http://localhost:5173",
-            "https://planarstandardmtg.vercel.app/"
+            "https://planarstandardmtg.vercel.app"
         ],
         methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allowedHeaders: ["Content-Type", "Authorization"],
-        credentials: true
+        credentials: true,
+        preflight: true,
+        preflightContinue: false
     });
 
     app.register(prismaPlugin);
