@@ -30,5 +30,9 @@ export function buildServer() {
     app.register(matchRoutes, { prefix: "/api/matches" });
     app.register(dashboardRoutes, { prefix: "/api/dashboard" });
 
+    app.addHook("onRequest", async (request, reply) => {
+        console.log(`[${new Date().toISOString()}] ${request.method} ${request.url}`);
+    });
+    
     return app;
 }

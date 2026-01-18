@@ -1,6 +1,8 @@
 {
+  "version": 2,
   "outputDirectory": "dist",
   "routes": [
+    { "source": "/api/(.*)", "destination": "/src/index.ts?path=$1" },
     { "src": "/(.*)", "dest": "/src/index.ts" }
   ]
 }
