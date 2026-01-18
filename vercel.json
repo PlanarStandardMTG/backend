@@ -1,8 +1,6 @@
 {
   "version": 2,
-  "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/src/index.ts" },
     { "source": "/(.*)", "destination": "/src/index.ts" }
   ],
   "headers": [
