@@ -28,8 +28,11 @@ export async function authRoutes(fastify: FastifyInstance) {
         return { token };
     });
 
-    fastify.get("/me", { preHandler: [fastify.authenticate] }, async (request: any) => {
-        return request.user;
+    fastify.get("/me", { preHandler: [fastify.authenticate] }, async (request: any, reply: any) => {
+        const user = await fastify.prisma.user.findUnique({ where: { id: request.user.id } });
+        if (!user) return reply.code(404).send({ message: "User not found" });
+
+        return { id: user.id, email: user.email, username: user.username, elo: user.elo };
     });
 
 }
