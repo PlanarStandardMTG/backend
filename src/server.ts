@@ -27,12 +27,14 @@ export function buildServer() {
     app.register(authRoutes, { prefix: "/api/auth" });
 
     app.register(testRoutes, { prefix: "/api/test" });
+    app.get("/api/test2", async () => ({ message: "Direct route works!" }));
+
     app.register(matchRoutes, { prefix: "/api/matches" });
     app.register(dashboardRoutes, { prefix: "/api/dashboard" });
 
     app.addHook("onRequest", async (request, reply) => {
         console.log(`[${new Date().toISOString()}] ${request.method} ${request.url}`);
     });
-    
+
     return app;
 }
