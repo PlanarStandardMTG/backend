@@ -46,3 +46,6 @@ coverage/
 # Misc
 .cache/
 dist/
+copilot/
+
+.vercel

@@ -1,4 +1,4 @@
-import { FastifyInstance } from "fastify";
+import { type FastifyInstance } from "fastify";
 import { prisma } from "../plugins/prisma.js";
 import { calculateEloChange } from "../utils/elo.js";
 

@@ -1,4 +1,4 @@
-import { FastifyInstance } from "fastify";
+import { type FastifyInstance } from "fastify";
 import bcrypt from "bcrypt";
 
 export async function authRoutes(fastify: FastifyInstance) {
