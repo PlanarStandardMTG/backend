@@ -33,6 +33,39 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
 
 ## Match Endpoints (`/api/matches`)
 
+### Get All Matches
+- **Endpoint:** `GET /api/matches`
+- **Protection:** Protected (requires admin privileges)
+- **Description:** Get all matches in the system with pagination
+- **Query Parameters:**
+  - `limit` (number, default: 10, max: 100) - Number of matches to return
+  - `offset` (number, default: 0) - Pagination offset
+- **Response:**
+  ```json
+  {
+    "matches": [
+      {
+        "id": "match_id",
+        "player1Id": "user_id_1",
+        "player2Id": "user_id_2",
+        "winner": "user_id_1",
+        "player1EloChange": 16,
+        "player2EloChange": -16,
+        "createdAt": "2026-01-20T...",
+        "completedAt": "2026-01-20T...",
+        "player1": { "id": "...", "username": "...", "elo": 1616 },
+        "player2": { "id": "...", "username": "...", "elo": 1584 }
+      }
+    ],
+    "pagination": {
+      "limit": 10,
+      "offset": 0,
+      "total": 150,
+      "hasMore": true
+    }
+  }
+  ```
+
 ### Create Match
 - **Endpoint:** `POST /api/matches`
 - **Protection:** Protected (requires admin privileges)
@@ -68,6 +101,39 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
 - **Protection:** Protected (requires authentication)
 - **Description:** Fetch details of a specific match
 - **Response:** Match object with player information
+
+### Get User Matches
+- **Endpoint:** `GET /api/matches/user/:userId`
+- **Protection:** Protected (requires authentication)
+- **Description:** Get all matches for a specific user with pagination
+- **Query Parameters:**
+  - `limit` (number, default: 10, max: 100) - Number of matches to return
+  - `offset` (number, default: 0) - Pagination offset
+- **Response:**
+  ```json
+  {
+    "matches": [
+      {
+        "id": "match_id",
+        "player1Id": "user_id_1",
+        "player2Id": "user_id_2",
+        "winner": "user_id_1",
+        "player1EloChange": 16,
+        "player2EloChange": -16,
+        "createdAt": "2026-01-20T...",
+        "completedAt": "2026-01-20T...",
+        "player1": { "id": "...", "username": "...", "elo": 1616 },
+        "player2": { "id": "...", "username": "...", "elo": 1584 }
+      }
+    ],
+    "pagination": {
+      "limit": 10,
+      "offset": 0,
+      "total": 25,
+      "hasMore": true
+    }
+  }
+  ```
 
 ## Dashboard Endpoints (`/api/dashboard`)
 
@@ -106,6 +172,41 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
   - `limit` (number, default: 10) - Number of matches to return
   - `offset` (number, default: 0) - Pagination offset
 - **Response:** Array of completed matches sorted by completion date
+
+## Admin Endpoints (`/api/admin`)
+
+### Get All Users
+- **Endpoint:** `GET /api/admin/users`
+- **Protection:** Protected (requires admin privileges)
+- **Description:** Get all users in the system with pagination and stats
+- **Query Parameters:**
+  - `limit` (number, default: 10, max: 100) - Number of users to return
+  - `offset` (number, default: 0) - Pagination offset
+- **Response:**
+  ```json
+  {
+    "users": [
+      {
+        "id": "user_id",
+        "email": "user@example.com",
+        "username": "playerName",
+        "elo": 1650,
+        "isAdmin": false,
+        "isTournamentOrganizer": false,
+        "isBlogger": false,
+        "createdAt": "2026-01-15T...",
+        "totalMatches": 25,
+        "totalWins": 15
+      }
+    ],
+    "pagination": {
+      "limit": 10,
+      "offset": 0,
+      "total": 100,
+      "hasMore": true
+    }
+  }
+  ```
 
 ## Leaderboard Endpoints (`/api/leaderboard`)
 
@@ -147,9 +248,11 @@ Authentication:
   POST   /api/auth/login              - Login
 
 Matches:
+  GET    /api/matches                    - Get all matches (admin only)
   POST   /api/matches                    - Create match (admin only)
   POST   /api/matches/:matchId/complete  - Complete match (admin only)
   GET    /api/matches/:matchId           - Get match details (protected)
+  GET    /api/matches/user/:userId       - Get user matches (protected)
 
 Dashboard:
   GET    /api/dashboard/leaderboard              - Global leaderboard (protected)
@@ -160,4 +263,7 @@ Dashboard:
 
 Leaderboard:
   GET    /api/leaderboard                        - Public leaderboard (public)
+
+Admin:
+  GET    /api/admin/users                        - Get all users (admin only)
 ```

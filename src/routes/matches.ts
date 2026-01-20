@@ -4,6 +4,7 @@ import { calculateEloChange } from "../utils/elo.js";
 import { userPublicSelect } from "../utils/prismaSelects.js";
 
 interface CreateMatchRequest {
+  player1Id: string;
   player2Id: string;
 }
 
@@ -12,16 +13,75 @@ interface CompleteMatchRequest {
 }
 
 export async function matchRoutes(app: FastifyInstance) {
-  // Create a new match between two players
-  app.post<{ Body: CreateMatchRequest }>(
-    "/matches",
+  // Get all matches (admin only, paginated)
+  app.get<{
+    Querystring: { limit?: string; offset?: string };
+  }>(
+    "/",
     {
       onRequest: [app.authenticateAdmin],
     },
     async (request, reply) => {
       try {
-        const player1Id = request.user.sub;
-        const { player2Id } = request.body;
+        const limit = parseInt(request.query.limit || "10", 10);
+        const offset = parseInt(request.query.offset || "0", 10);
+
+        // Validate pagination parameters
+        if (limit < 1 || limit > 100) {
+          return reply
+            .status(400)
+            .send({ error: "Limit must be between 1 and 100" });
+        }
+
+        if (offset < 0) {
+          return reply.status(400).send({ error: "Offset must be non-negative" });
+        }
+
+        // Get total count and matches
+        const [total, matches] = await Promise.all([
+          prisma.match.count(),
+          prisma.match.findMany({
+            include: {
+              player1: {
+                select: userPublicSelect,
+              },
+              player2: {
+                select: userPublicSelect,
+              },
+            },
+            orderBy: {
+              createdAt: "desc",
+            },
+            take: limit,
+            skip: offset,
+          }),
+        ]);
+
+        return reply.send({
+          matches,
+          pagination: {
+            limit,
+            offset,
+            total,
+            hasMore: offset + limit < total,
+          },
+        });
+      } catch (error) {
+        console.error("Error fetching matches:", error);
+        return reply.status(500).send({ error: "Failed to fetch matches" });
+      }
+    }
+  );
+
+  // Create a new match between two players
+  app.post<{ Body: CreateMatchRequest }>(
+    "/",
+    {
+      onRequest: [app.authenticateAdmin],
+    },
+    async (request, reply) => {
+      try {
+        const { player1Id, player2Id } = request.body;
 
         // Validate that both players exist
         const [player1, player2] = await Promise.all([
@@ -70,7 +130,7 @@ export async function matchRoutes(app: FastifyInstance) {
 
   // Complete a match and update ELO
   app.post<{ Params: { matchId: string }; Body: CompleteMatchRequest }>(
-    "/matches/:matchId/complete",
+    "/:matchId/complete",
     {
       onRequest: [app.authenticateAdmin],
     },
@@ -91,13 +151,6 @@ export async function matchRoutes(app: FastifyInstance) {
 
         if (!match) {
           return reply.status(404).send({ error: "Match not found" });
-        }
-
-        // Verify the user is one of the players
-        if (match.player1Id !== userId && match.player2Id !== userId) {
-          return reply
-            .status(403)
-            .send({ error: "Unauthorized to complete this match" });
         }
 
         // Verify match hasn't already been completed
@@ -175,7 +228,7 @@ export async function matchRoutes(app: FastifyInstance) {
 
   // Get match details
   app.get<{ Params: { matchId: string } }>(
-    "/matches/:matchId",
+    "/:matchId",
     {
       onRequest: [app.authenticate],
     },
@@ -203,6 +256,74 @@ export async function matchRoutes(app: FastifyInstance) {
       } catch (error) {
         console.error("Error fetching match:", error);
         return reply.status(500).send({ error: "Failed to fetch match" });
+      }
+    }
+  );
+
+  // Get all matches for the authenticated user (paginated)
+  app.get<{
+    Querystring: { limit?: string; offset?: string };
+  }>(
+    "/user",
+    {
+      onRequest: [app.authenticate],
+    },
+    async (request, reply) => {
+      try {
+        const userId = request.user.sub;
+        const limit = parseInt(request.query.limit || "10", 10);
+        const offset = parseInt(request.query.offset || "0", 10);
+
+        // Validate pagination parameters
+        if (limit < 1 || limit > 100) {
+          return reply
+            .status(400)
+            .send({ error: "Limit must be between 1 and 100" });
+        }
+
+        if (offset < 0) {
+          return reply.status(400).send({ error: "Offset must be non-negative" });
+        }
+
+        // Get total count and matches
+        const [total, matches] = await Promise.all([
+          prisma.match.count({
+            where: {
+              OR: [{ player1Id: userId }, { player2Id: userId }],
+            },
+          }),
+          prisma.match.findMany({
+            where: {
+              OR: [{ player1Id: userId }, { player2Id: userId }],
+            },
+            include: {
+              player1: {
+                select: userPublicSelect,
+              },
+              player2: {
+                select: userPublicSelect,
+              },
+            },
+            orderBy: {
+              createdAt: "desc",
+            },
+            take: limit,
+            skip: offset,
+          }),
+        ]);
+
+        return reply.send({
+          matches,
+          pagination: {
+            limit,
+            offset,
+            total,
+            hasMore: offset + limit < total,
+          },
+        });
+      } catch (error) {
+        console.error("Error fetching user matches:", error);
+        return reply.status(500).send({ error: "Failed to fetch matches" });
       }
     }
   );

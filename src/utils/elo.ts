@@ -51,6 +51,19 @@ export function calculateEloChange(
 }
 
 /**
+ * Calculate the number of wins for a user from their matches
+ * @param matches - Array of matches where the user participated
+ * @param userId - The user's ID
+ * @returns Number of matches won by the user
+ */
+export function calculateMatchWins(
+  matches: Array<{ winner: string | null; player1Id: string; player2Id: string }>,
+  userId: string
+): number {
+  return matches.filter((match) => match.winner === userId).length;
+}
+
+/**
  * Calculate the expected rating for a new user
  * Standard starting ELO is 1600
  */

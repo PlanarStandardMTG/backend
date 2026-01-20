@@ -7,6 +7,7 @@ import { testRoutes } from "./routes/testRoutes.js";
 import { matchRoutes } from "./routes/matches.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { leaderboardRoutes } from "./routes/leaderboard.js";
+import { adminRoutes } from "./routes/admin.js";
 
 export function buildServer() {
     const app = Fastify();
@@ -38,6 +39,7 @@ export function buildServer() {
     app.register(matchRoutes, { prefix: "/api/matches" });
     app.register(dashboardRoutes, { prefix: "/api/dashboard" });
     app.register(leaderboardRoutes, { prefix: "/api/leaderboard" });
+    app.register(adminRoutes, { prefix: "/api/admin" });
 
     return app;
 }
