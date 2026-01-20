@@ -1,5 +1,6 @@
 import { type FastifyInstance } from "fastify";
 import bcrypt from "bcrypt";
+import { createJwtPayload, createUserResponse } from "../utils/prismaSelects.js";
 
 export async function authRoutes(fastify: FastifyInstance) {
 
@@ -12,7 +13,7 @@ export async function authRoutes(fastify: FastifyInstance) {
             data: { email, username, password: hashed }
         });
 
-        const token = fastify.jwt.sign({ sub: user.id, email: user.email, admin: user.admin });
+        const token = fastify.jwt.sign(createJwtPayload(user));
         return { id: user.id, email: user.email, username: user.username, token };
     });
 
@@ -25,7 +26,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         const valid = await bcrypt.compare(password, user!.password);
         if (!valid) return reply.code(401).send({ message: "Invalid credentials" });
 
-        const token = fastify.jwt.sign({ sub: user!.id, email: user!.email, admin: user!.admin });
+        const token = fastify.jwt.sign(createJwtPayload(user));
         return { token };
     });
 
@@ -33,7 +34,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         const user = await fastify.prisma.user.findUnique({ where: { id: request.user.sub } });
         if (!user) return reply.code(404).send({ message: "User not found" });
 
-        return { id: user.id, email: user.email, username: user.username, elo: user.elo, admin: user.admin };
+        return createUserResponse(user);
     });
 
 }

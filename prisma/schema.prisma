@@ -10,14 +10,16 @@ datasource db {
 }
 
 model User {
-  id          String    @id @default(cuid())
-  email       String    @unique
-  username    String    @unique
-  password    String
-  elo         Int       @default(1600)
-  admin       Boolean   @default(false)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                    String    @id @default(cuid())
+  email                 String    @unique
+  username              String    @unique
+  password              String
+  elo                   Int       @default(1600)
+  admin                 Boolean   @default(false)
+  tournamentOrganizer   Boolean   @default(false)
+  blogger               Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
   
   matchesAsPlayer1  Match[]  @relation("player1")
   matchesAsPlayer2  Match[]  @relation("player2")

@@ -1,5 +1,6 @@
 import { type FastifyInstance } from "fastify";
 import { prisma } from "../plugins/prisma.js";
+import { userPublicSelect, userPrivateSelect } from "../utils/prismaSelects.js";
 
 interface LeaderboardEntry {
   rank: number;
@@ -111,10 +112,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
         const user = await prisma.user.findUnique({
           where: { id: userId },
           select: {
-            id: true,
-            username: true,
-            email: true,
-            elo: true,
+            ...userPrivateSelect,
             matchesAsPlayer1: true,
             matchesAsPlayer2: true,
           },
@@ -162,7 +160,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
               : match.player1Id;
             const opponent = await prisma.user.findUnique({
               where: { id: opponentId },
-              select: { id: true, username: true, elo: true },
+              select: userPublicSelect,
             });
 
             const isWin = match.winner === userId;
@@ -213,10 +211,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
         const user = await prisma.user.findUnique({
           where: { id: userId },
           select: {
-            id: true,
-            username: true,
-            email: true,
-            elo: true,
+            ...userPrivateSelect,
             matchesAsPlayer1: true,
             matchesAsPlayer2: true,
           },
@@ -264,7 +259,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
               : match.player1Id;
             const opponent = await prisma.user.findUnique({
               where: { id: opponentId },
-              select: { id: true, username: true, elo: true },
+              select: userPublicSelect,
             });
 
             const isWin = match.winner === userId;
@@ -319,10 +314,10 @@ export async function dashboardRoutes(app: FastifyInstance) {
           },
           include: {
             player1: {
-              select: { id: true, username: true, elo: true },
+              select: userPublicSelect,
             },
             player2: {
-              select: { id: true, username: true, elo: true },
+              select: userPublicSelect,
             },
           },
           orderBy: { createdAt: "desc" },
@@ -357,10 +352,10 @@ export async function dashboardRoutes(app: FastifyInstance) {
           },
           include: {
             player1: {
-              select: { id: true, username: true, elo: true },
+              select: userPublicSelect,
             },
             player2: {
-              select: { id: true, username: true, elo: true },
+              select: userPublicSelect,
             },
           },
           orderBy: { completedAt: "desc" },

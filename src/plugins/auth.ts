@@ -15,11 +15,15 @@ declare module "@fastify/jwt" {
             sub: string;
             email: string;
             admin: boolean;
+            tournamentOrganizer: boolean;
+            blogger: boolean;
         };
         user: {
             sub: string;
             email: string;
             admin: boolean;
+            tournamentOrganizer: boolean;
+            blogger: boolean;
         };
     }
 }

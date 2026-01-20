@@ -1,6 +1,7 @@
 import { type FastifyInstance } from "fastify";
 import { prisma } from "../plugins/prisma.js";
 import { calculateEloChange } from "../utils/elo.js";
+import { userPublicSelect } from "../utils/prismaSelects.js";
 
 interface CreateMatchRequest {
   player2Id: string;
@@ -51,10 +52,10 @@ export async function matchRoutes(app: FastifyInstance) {
           },
           include: {
             player1: {
-              select: { id: true, username: true, elo: true },
+              select: userPublicSelect,
             },
             player2: {
-              select: { id: true, username: true, elo: true },
+              select: userPublicSelect,
             },
           },
         });
@@ -152,10 +153,10 @@ export async function matchRoutes(app: FastifyInstance) {
           where: { id: matchId },
           include: {
             player1: {
-              select: { id: true, username: true, elo: true },
+              select: userPublicSelect,
             },
             player2: {
-              select: { id: true, username: true, elo: true },
+              select: userPublicSelect,
             },
           },
         });
@@ -186,18 +187,10 @@ export async function matchRoutes(app: FastifyInstance) {
           where: { id: matchId },
           include: {
             player1: {
-              select: {
-                id: true,
-                username: true,
-                elo: true,
-              },
+              select: userPublicSelect,
             },
             player2: {
-              select: {
-                id: true,
-                username: true,
-                elo: true,
-              },
+              select: userPublicSelect,
             },
           },
         });
