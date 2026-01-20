@@ -35,7 +35,7 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
 
 ### Create Match
 - **Endpoint:** `POST /api/matches`
-- **Protection:** Protected (requires authentication)
+- **Protection:** Protected (requires admin privileges)
 - **Description:** Create a new match between two players
 - **Request Body:**
   ```json
@@ -51,7 +51,7 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
 
 ### Complete Match
 - **Endpoint:** `POST /api/matches/:matchId/complete`
-- **Protection:** Protected (must be one of the players)
+- **Protection:** Protected (requires admin privileges)
 - **Description:** Complete a match, record winner, and update ELO ratings
 - **Request Body:**
   ```json
@@ -61,7 +61,6 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
   ```
 - **Validations:**
   - Winner must be either player1 or player2
-  - Only players in the match can complete it
 - **Response:** Updated match with ELO changes for both players
 
 ### Get Match Details
@@ -148,8 +147,8 @@ Authentication:
   POST   /api/auth/login              - Login
 
 Matches:
-  POST   /api/matches                    - Create match (protected)
-  POST   /api/matches/:matchId/complete  - Complete match (protected)
+  POST   /api/matches                    - Create match (admin only)
+  POST   /api/matches/:matchId/complete  - Complete match (admin only)
   GET    /api/matches/:matchId           - Get match details (protected)
 
 Dashboard:

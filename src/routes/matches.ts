@@ -15,7 +15,7 @@ export async function matchRoutes(app: FastifyInstance) {
   app.post<{ Body: CreateMatchRequest }>(
     "/matches",
     {
-      onRequest: [app.authenticate],
+      onRequest: [app.authenticateAdmin],
     },
     async (request, reply) => {
       try {
@@ -71,7 +71,7 @@ export async function matchRoutes(app: FastifyInstance) {
   app.post<{ Params: { matchId: string }; Body: CompleteMatchRequest }>(
     "/matches/:matchId/complete",
     {
-      onRequest: [app.authenticate],
+      onRequest: [app.authenticateAdmin],
     },
     async (request, reply) => {
       try {

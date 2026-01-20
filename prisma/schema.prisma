@@ -15,6 +15,7 @@ model User {
   username    String    @unique
   password    String
   elo         Int       @default(1600)
+  admin       Boolean   @default(false)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   

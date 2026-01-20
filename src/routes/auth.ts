@@ -12,7 +12,8 @@ export async function authRoutes(fastify: FastifyInstance) {
             data: { email, username, password: hashed }
         });
 
-        return { id: user.id, email: user.email, username: user.username };
+        const token = fastify.jwt.sign({ sub: user.id, email: user.email, admin: user.admin });
+        return { id: user.id, email: user.email, username: user.username, token };
     });
 
     fastify.post("/login", async (request, reply) => {
@@ -24,15 +25,15 @@ export async function authRoutes(fastify: FastifyInstance) {
         const valid = await bcrypt.compare(password, user!.password);
         if (!valid) return reply.code(401).send({ message: "Invalid credentials" });
 
-        const token = fastify.jwt.sign({ id: user!.id });
+        const token = fastify.jwt.sign({ sub: user!.id, email: user!.email, admin: user!.admin });
         return { token };
     });
 
     fastify.get("/me", { preHandler: [fastify.authenticate] }, async (request: any, reply: any) => {
-        const user = await fastify.prisma.user.findUnique({ where: { id: request.user.id } });
+        const user = await fastify.prisma.user.findUnique({ where: { id: request.user.sub } });
         if (!user) return reply.code(404).send({ message: "User not found" });
 
-        return { id: user.id, email: user.email, username: user.username, elo: user.elo };
+        return { id: user.id, email: user.email, username: user.username, elo: user.elo, admin: user.admin };
     });
 
 }

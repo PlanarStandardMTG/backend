@@ -5,6 +5,7 @@ import { type FastifyInstance, type FastifyRequest, type FastifyReply } from "fa
 declare module "fastify" {
     interface FastifyInstance {
         authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+        authenticateAdmin: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
     }
 }
 
@@ -13,10 +14,12 @@ declare module "@fastify/jwt" {
         payload: {
             sub: string;
             email: string;
+            admin: boolean;
         };
         user: {
             sub: string;
             email: string;
+            admin: boolean;
         };
     }
 }
@@ -28,6 +31,14 @@ export default fp(async (fastify: FastifyInstance) => {
 
     fastify.decorate("authenticate", async (request: FastifyRequest, reply: FastifyReply) => {
             await request.jwtVerify();
+        }
+    );
+
+    fastify.decorate("authenticateAdmin", async (request: FastifyRequest, reply: FastifyReply) => {
+            await request.jwtVerify();
+            if (!request.user.admin) {
+                reply.code(403).send({ error: "Admin privileges required" });
+            }
         }
     );
 })
