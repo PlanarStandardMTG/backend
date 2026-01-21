@@ -21,8 +21,9 @@ model User {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   
-  matchesAsPlayer1  Match[]  @relation("player1")
-  matchesAsPlayer2  Match[]  @relation("player2")
+  matchesAsPlayer1      Match[]               @relation("player1")
+  matchesAsPlayer2      Match[]               @relation("player2")
+  challongeConnection   ChallongeConnection?
 }
 
 model Match {
@@ -42,5 +43,21 @@ model Match {
   
   @@index([player1Id])
   @@index([player2Id])
+}
+
+model ChallongeConnection {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  accessToken   String
+  refreshToken  String
+  expiresAt     DateTime
+  scope         String?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([userId])
 }
 

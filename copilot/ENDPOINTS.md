@@ -240,6 +240,98 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
   }
   ```
 
+## Challonge Integration Endpoints (`/api/challonge`)
+
+### Initiate OAuth Connection
+- **Endpoint:** `GET /api/challonge/connect`
+- **Protection:** Protected (requires authentication)
+- **Description:** Generate authorization URL to initiate Challonge OAuth flow
+- **Response:**
+  ```json
+  {
+    "authorizationUrl": "https://api.challonge.com/oauth/authorize?client_id=...",
+    "state": "base64_encoded_state"
+  }
+  ```
+
+### OAuth Callback
+- **Endpoint:** `POST /api/challonge/callback`
+- **Protection:** Protected (requires authentication)
+- **Description:** Exchange authorization code for access tokens and store connection
+- **Request Body:**
+  ```json
+  {
+    "code": "authorization_code_from_challonge",
+    "state": "base64_encoded_state"
+  }
+  ```
+- **Response:**
+  ```json
+  {
+    "success": true,
+    "connected": true,
+    "expiresAt": "2026-01-21T12:00:00Z"
+  }
+  ```
+
+### Get Connection Status
+- **Endpoint:** `GET /api/challonge/status`
+- **Protection:** Protected (requires authentication)
+- **Description:** Check if user has an active Challonge connection
+- **Response (Connected):**
+  ```json
+  {
+    "connected": true,
+    "expiresAt": "2026-01-21T12:00:00Z",
+    "isExpired": false,
+    "scope": "me tournaments:read tournaments:write matches:read matches:write",
+    "connectedSince": "2026-01-20T10:00:00Z"
+  }
+  ```
+- **Response (Not Connected):**
+  ```json
+  {
+    "connected": false
+  }
+  ```
+
+### Refresh Access Token
+- **Endpoint:** `POST /api/challonge/refresh`
+- **Protection:** Protected (requires authentication)
+- **Description:** Manually refresh the Challonge access token using refresh token
+- **Response:**
+  ```json
+  {
+    "success": true,
+    "expiresAt": "2026-01-21T14:00:00Z",
+    "scope": "me tournaments:read tournaments:write matches:read matches:write"
+  }
+  ```
+
+### Get Valid Access Token
+- **Endpoint:** `GET /api/challonge/token`
+- **Protection:** Protected (requires authentication)
+- **Description:** Get current access token (auto-refreshes if expired or expiring within 5 minutes)
+- **Response:**
+  ```json
+  {
+    "accessToken": "challonge_access_token",
+    "expiresAt": "2026-01-21T12:00:00Z"
+  }
+  ```
+
+### Disconnect Challonge
+- **Endpoint:** `DELETE /api/challonge/disconnect`
+- **Protection:** Protected (requires authentication)
+- **Description:** Revoke and remove Challonge OAuth connection
+- **Response:**
+  ```json
+  {
+    "success": true,
+    "message": "Challonge connection removed"
+  }
+  ```
+
 ## Quick Reference
 
 ```
@@ -266,4 +358,12 @@ Leaderboard:
 
 Admin:
   GET    /api/admin/users                        - Get all users (admin only)
+
+Challonge:
+  GET    /api/challonge/connect                  - Initiate OAuth (protected)
+  POST   /api/challonge/callback                 - OAuth callback (protected)
+  GET    /api/challonge/status                   - Connection status (protected)
+  POST   /api/challonge/refresh                  - Refresh token (protected)
+  GET    /api/challonge/token                    - Get valid token (protected)
+  DELETE /api/challonge/disconnect               - Disconnect (protected)
 ```
