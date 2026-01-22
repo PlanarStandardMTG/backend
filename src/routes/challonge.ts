@@ -105,6 +105,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
 
         // Fetch user's Challonge username
         let challongeUsername: string | undefined;
+        console.log('Attempting to fetch Challonge username...');
         try {
           const meResponse = await fetch('https://api.challonge.com/v2.1/me.json', {
             headers: {
@@ -113,6 +114,9 @@ export default async function challongeRoutes(app: FastifyInstance) {
               'Accept': 'application/json',
             },
           });
+          
+          console.log('Challonge /me.json response status:', meResponse.status);
+          
           if (meResponse.ok) {
             const meData = await meResponse.json() as {
               data: {
@@ -121,11 +125,18 @@ export default async function challongeRoutes(app: FastifyInstance) {
                 };
               };
             };
+            console.log('Challonge /me.json response data:', JSON.stringify(meData, null, 2));
             challongeUsername = meData.data.attributes.username;
+            console.log('Extracted Challonge username:', challongeUsername);
+          } else {
+            const errorText = await meResponse.text();
+            console.error('Challonge /me.json failed with status:', meResponse.status, 'Error:', errorText);
           }
         } catch (error) {
-          console.warn('Failed to fetch Challonge username:', error);
+          console.error('Exception while fetching Challonge username:', error);
         }
+        
+        console.log('Final challongeUsername to save:', challongeUsername);
 
         // Store or update the connection
         const connection = await prisma.challongeConnection.upsert({
