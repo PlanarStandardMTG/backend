@@ -257,7 +257,7 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
 ### OAuth Callback
 - **Endpoint:** `POST /api/challonge/callback`
 - **Protection:** Protected (requires authentication)
-- **Description:** Exchange authorization code for access tokens and store connection
+- **Description:** Exchange authorization code for access tokens, fetch user's Challonge username, and store connection
 - **Request Body:**
   ```json
   {
@@ -332,6 +332,79 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
   }
   ```
 
+### Get All Tournaments
+- **Endpoint:** `GET /api/challonge/tournaments`
+- **Protection:** Protected (requires authentication)
+- **Description:** Fetch all tournaments associated with the app from Challonge API (using API key) and sync to local database. All authenticated users can view these tournaments. Includes participation status for the current user.
+- **Note:** Uses app's API key (not user OAuth) to fetch app-wide tournaments. Checks if user is a participant by comparing their Challonge username.
+- **Response:**
+  ```json
+  {
+    "tournaments": [
+      {
+        "id": "local_db_id",
+        "challongeId": "challonge_tournament_id",
+        "userId": null,
+        "name": "Weekly Tournament #5",
+        "tournamentType": "single elimination",
+        "url": "weekly-tournament-5",
+        "state": "pending",
+        "startsAt": "2026-01-25T18:00:00Z",
+        "gameName": "Magic: The Gathering",
+        "participantCount": 16,
+        "lastSyncedAt": "2026-01-22T10:00:00Z",
+        "createdAt": "2026-01-22T10:00:00Z",
+        "updatedAt": "2026-01-22T10:00:00Z",
+        "isParticipant": true,
+        "userChallongeUsername": "player123"
+      }
+    ],
+    "count": 1
+  }
+  ```
+
+### Get Tournament by ID
+- **Endpoint:** `GET /api/challonge/tournaments/:id`
+- **Protection:** Protected (requires authentication)
+- **Description:** Fetch a specific tournament from Challonge API by ID (using API key) and sync to local database. Includes participation status for the current user.
+- **URL Parameters:**
+  - `id` (string) - Challonge tournament ID
+- **Note:** Uses app's API key (not user OAuth) to fetch tournament data. Checks if user is a participant by comparing their Challonge username.
+- **Response:**
+  ```json
+  {
+    "tournament": {
+      "id": "local_db_id",
+      "challongeId": "challonge_tournament_id",
+      "userId": null,
+      "name": "Weekly Tournament #5",
+      "tournamentType": "single elimination",
+      "url": "weekly-tournament-5",
+      "state": "pending",
+      "startsAt": "2026-01-25T18:00:00Z",
+      "gameName": "Magic: The Gathering",
+      "participantCount": 16,
+      "lastSyncedAt": "2026-01-22T10:00:00Z",
+      "createdAt": "2026-01-22T10:00:00Z",
+      "updatedAt": "2026-01-22T10:00:00Z",
+      "isParticipant": true,
+      "userChallongeUsername": "player123"
+    },
+    "fullData": {
+      "name": "Weekly Tournament #5",
+      "tournament_type": "single elimination",
+      "url": "weekly-tournament-5",
+      "state": "pending",
+      "starts_at": "2026-01-25T18:00:00Z",
+      "game_name": "Magic: The Gathering",
+      "participants_count": 16,
+      "description": "Tournament description...",
+      "private": false,
+      "group_stage_enabled": false
+    }
+  }
+  ```
+
 ## Quick Reference
 
 ```
@@ -366,4 +439,6 @@ Challonge:
   POST   /api/challonge/refresh                  - Refresh token (protected)
   GET    /api/challonge/token                    - Get valid token (protected)
   DELETE /api/challonge/disconnect               - Disconnect (protected)
+  GET    /api/challonge/tournaments              - Get all tournaments (protected)
+  GET    /api/challonge/tournaments/:id          - Get tournament by ID (protected)
 ```
