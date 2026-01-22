@@ -405,6 +405,57 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
   }
   ```
 
+### Join Tournament
+- **Endpoint:** `POST /api/challonge/tournaments/:id/join`
+- **Protection:** Protected (requires authentication + Challonge connection)
+- **Description:** Join a tournament as a participant. User must have connected their Challonge account.
+- **URL Parameters:**
+  - `id` (string) - Challonge tournament ID
+- **Validations:**
+  - User must have a Challonge connection with username
+  - User cannot already be a participant
+- **Note:** Uses participant caching (5-minute TTL) to minimize API calls. Cache is invalidated after successful join.
+- **Response:**
+  ```json
+  {
+    "success": true,
+    "message": "Successfully joined tournament",
+    "participant": {
+      "id": "participant_id",
+      "type": "participant",
+      "attributes": {
+        "name": "player123",
+        "username": "player123",
+        "seed": 1
+      }
+    }
+  }
+  ```
+- **Error Responses:**
+  - `403` - No Challonge connection found
+  - `400` - Already a participant in tournament
+
+### Leave Tournament
+- **Endpoint:** `DELETE /api/challonge/tournaments/:id/leave`
+- **Protection:** Protected (requires authentication + Challonge connection)
+- **Description:** Leave a tournament by removing your participant entry
+- **URL Parameters:**
+  - `id` (string) - Challonge tournament ID
+- **Validations:**
+  - User must have a Challonge connection
+  - User must be a participant in the tournament
+- **Note:** Uses participant caching (5-minute TTL) to minimize API calls. Cache is invalidated after successful removal.
+- **Response:**
+  ```json
+  {
+    "success": true,
+    "message": "Successfully left tournament"
+  }
+  ```
+- **Error Responses:**
+  - `403` - No Challonge connection found
+  - `404` - Not a participant in tournament
+
 ## Quick Reference
 
 ```
@@ -441,4 +492,6 @@ Challonge:
   DELETE /api/challonge/disconnect               - Disconnect (protected)
   GET    /api/challonge/tournaments              - Get all tournaments (protected)
   GET    /api/challonge/tournaments/:id          - Get tournament by ID (protected)
+  POST   /api/challonge/tournaments/:id/join     - Join tournament (protected, requires connection)
+  DELETE /api/challonge/tournaments/:id/leave    - Leave tournament (protected, requires connection)
 ```

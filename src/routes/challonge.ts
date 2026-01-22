@@ -9,8 +9,49 @@ const CHALLONGE_CONFIG = {
   authorizationUrl: 'https://api.challonge.com/oauth/authorize',
   tokenUrl: 'https://api.challonge.com/oauth/token',
   redirectUri: process.env.CHALLONGE_REDIRECT_URI || 'http://localhost:5173/challonge/callback',
-  scope: 'me tournaments:read tournaments:write matches:read matches:write'
+  scope: 'me tournaments:read tournaments:write matches:read matches:write participants:read participants:write'
 };
+
+// Cache for tournament participants to minimize API calls
+interface ParticipantCacheEntry {
+  data: Array<{
+    id: string;
+    attributes: {
+      name?: string;
+      username?: string;
+      seed?: number;
+      tournament_id?: number;
+    };
+  }>;
+  timestamp: number;
+}
+
+const participantsCache = new Map<string, ParticipantCacheEntry>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCachedParticipants(tournamentId: string): ParticipantCacheEntry['data'] | null {
+  const cached = participantsCache.get(tournamentId);
+  if (!cached) return null;
+  
+  const isExpired = Date.now() - cached.timestamp > CACHE_TTL;
+  if (isExpired) {
+    participantsCache.delete(tournamentId);
+    return null;
+  }
+  
+  return cached.data;
+}
+
+function setCachedParticipants(tournamentId: string, data: ParticipantCacheEntry['data']): void {
+  participantsCache.set(tournamentId, {
+    data,
+    timestamp: Date.now(),
+  });
+}
+
+function invalidateParticipantsCache(tournamentId: string): void {
+  participantsCache.delete(tournamentId);
+}
 
 interface AuthenticatedRequest extends FastifyRequest {
   user: {
@@ -452,6 +493,47 @@ export default async function challongeRoutes(app: FastifyInstance) {
     return connection.accessToken;
   }
 
+  // Helper function to fetch tournament participants (with caching)
+  async function fetchTournamentParticipants(tournamentId: string): Promise<ParticipantCacheEntry['data'] | null> {
+    // Check cache first
+    const cached = getCachedParticipants(tournamentId);
+    if (cached) {
+      return cached;
+    }
+
+    // Fetch from API
+    try {
+      const participantsResponse = await fetch(
+        `https://api.challonge.com/v2.1/tournaments/${tournamentId}/participants.json`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization-Type': 'v1',
+            'Authorization': CHALLONGE_CONFIG.apiKey,
+            'Content-Type': 'application/vnd.api+json',
+            'Accept': 'application/json',
+          },
+        }
+      );
+
+      if (!participantsResponse.ok) {
+        return null;
+      }
+
+      const participantsData = await participantsResponse.json() as {
+        data: ParticipantCacheEntry['data'];
+      };
+
+      // Cache the result
+      setCachedParticipants(tournamentId, participantsData.data);
+
+      return participantsData.data;
+    } catch (error) {
+      console.error('Error fetching participants:', error);
+      return null;
+    }
+  }
+
   // Get all tournaments associated with the app (using API key)
   app.get('/tournaments', {
     onRequest: [app.authenticate],
@@ -542,30 +624,10 @@ export default async function challongeRoutes(app: FastifyInstance) {
             if (userConnection?.challongeUsername) {
               console.log('Checking participation for user:', userConnection.challongeUsername);
               try {
-                const participantsResponse = await fetch(
-                  `https://api.challonge.com/v2.1/tournaments/${tournament.id}/participants.json`,
-                  {
-                    method: 'GET',
-                    headers: {
-                      'Authorization-Type': 'v1',
-                      'Authorization': CHALLONGE_CONFIG.apiKey,
-                      'Content-Type': 'application/vnd.api+json',
-                      'Accept': 'application/json',
-                    },
-                  }
-                );
+                const participants = await fetchTournamentParticipants(tournament.id);
 
-                if (participantsResponse.ok) {
-                  const participantsData = await participantsResponse.json() as {
-                    data: Array<{
-                      attributes: {
-                        name?: string;
-                        username?: string;
-                      };
-                    }>;
-                  };
-
-                  const participant = participantsData.data.find(
+                if (participants) {
+                  const participant = participants.find(
                     (p) => p.attributes.username === userConnection.challongeUsername ||
                            p.attributes.name === userConnection.challongeUsername
                   );
@@ -692,30 +754,10 @@ export default async function challongeRoutes(app: FastifyInstance) {
 
         if (userConnection?.challongeUsername) {
           try {
-            const participantsResponse = await fetch(
-              `https://api.challonge.com/v2.1/tournaments/${tournament.id}/participants.json`,
-              {
-                method: 'GET',
-                headers: {
-                  'Authorization-Type': 'v1',
-                  'Authorization': CHALLONGE_CONFIG.apiKey,
-                  'Content-Type': 'application/vnd.api+json',
-                  'Accept': 'application/json',
-                },
-              }
-            );
+            const participants = await fetchTournamentParticipants(tournament.id);
 
-            if (participantsResponse.ok) {
-              const participantsData = await participantsResponse.json() as {
-                data: Array<{
-                  attributes: {
-                    name?: string;
-                    username?: string;
-                  };
-                }>;
-              };
-
-              const participant = participantsData.data.find(
+            if (participants) {
+              const participant = participants.find(
                 (p) => p.attributes.username === userConnection.challongeUsername ||
                        p.attributes.name === userConnection.challongeUsername
               );
@@ -741,6 +783,234 @@ export default async function challongeRoutes(app: FastifyInstance) {
       } catch (error) {
         console.error('Error fetching tournament:', error);
         return reply.status(500).send({ error: 'Failed to fetch tournament' });
+      }
+    }
+  });
+
+  // Join a tournament as a participant
+  app.post('/tournaments/:id/join', {
+    onRequest: [app.authenticate],
+    handler: async (request: AuthenticatedRequest, reply) => {
+      try {
+        const { id } = request.params as { id: string };
+
+        // Fetch tournament from database to get challongeId
+        const tournament = await prisma.tournament.findUnique({
+          where: { id },
+          select: { challongeId: true, url: true },
+        });
+
+        if (!tournament) {
+          return reply.status(404).send({ error: 'Tournament not found' });
+        }
+
+        const tournamentIdentifier = tournament.challongeId;
+
+        // Check if user has connected their Challonge account
+        const userConnection = await prisma.challongeConnection.findUnique({
+          where: { userId: request.user.sub },
+          select: { challongeUsername: true },
+        });
+
+        if (!userConnection?.challongeUsername) {
+          return reply.status(403).send({ 
+            error: 'You must connect your Challonge account before joining tournaments' 
+          });
+        }
+
+        // Check if user is already a participant (use cache)
+        const participants = await fetchTournamentParticipants(tournamentIdentifier);
+        
+        if (participants) {
+          const alreadyParticipant = participants.find(
+            (p) => p.attributes.username === userConnection.challongeUsername ||
+                   p.attributes.name === userConnection.challongeUsername
+          );
+
+          if (alreadyParticipant) {
+            return reply.status(400).send({ 
+              error: 'You are already a participant in this tournament' 
+            });
+          }
+        }
+
+        if (!CHALLONGE_CONFIG.apiKey || CHALLONGE_CONFIG.apiKey === 'YOUR_CHALLONGE_API_KEY') {
+          return reply.status(500).send({ error: 'Challonge API key not configured' });
+        }
+
+        // Create participant using Challonge API
+        const createParticipantResponse = await fetch(
+          `https://api.challonge.com/v2.1/tournaments/${tournamentIdentifier}/participants.json`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization-Type': 'v1',
+              'Authorization': CHALLONGE_CONFIG.apiKey,
+              'Content-Type': 'application/vnd.api+json',
+              'Accept': 'application/json',
+            },
+            body: JSON.stringify({
+              data: {
+                type: 'Participants',
+                attributes: {
+                  name: userConnection.challongeUsername,
+                  username: userConnection.challongeUsername,
+                },
+              },
+            }),
+          }
+        );
+
+        if (!createParticipantResponse.ok) {
+          const errorText = await createParticipantResponse.text();
+          console.error('Failed to create participant:', errorText);
+          return reply.status(createParticipantResponse.status).send({ 
+            error: 'Failed to join tournament' 
+          });
+        }
+
+        const participantData = await createParticipantResponse.json() as {
+          data: {
+            id: string;
+            type: string;
+            attributes: {
+              name: string;
+              username?: string;
+              seed?: number;
+            };
+          };
+        };
+
+        // Invalidate cache for this tournament
+        invalidateParticipantsCache(tournamentIdentifier);
+
+        // Update tournament participant count in local DB
+        const updatedTournament = await prisma.tournament.findUnique({
+          where: { id },
+        });
+
+        if (updatedTournament) {
+          await prisma.tournament.update({
+            where: { id },
+            data: {
+              participantCount: updatedTournament.participantCount + 1,
+              lastSyncedAt: new Date(),
+            },
+          });
+        }
+
+        return reply.send({
+          success: true,
+          message: 'Successfully joined tournament',
+          participant: participantData.data,
+        });
+      } catch (error) {
+        console.error('Error joining tournament:', error);
+        return reply.status(500).send({ error: 'Failed to join tournament' });
+      }
+    }
+  });
+
+  // Leave a tournament (remove participant)
+  app.delete('/tournaments/:id/leave', {
+    onRequest: [app.authenticate],
+    handler: async (request: AuthenticatedRequest, reply) => {
+      try {
+        const { id } = request.params as { id: string };
+
+        // Fetch tournament from database to get challongeId
+        const tournament = await prisma.tournament.findUnique({
+          where: { id },
+          select: { challongeId: true, url: true },
+        });
+
+        if (!tournament) {
+          return reply.status(404).send({ error: 'Tournament not found' });
+        }
+
+        const tournamentIdentifier = tournament.challongeId;
+
+        // Check if user has connected their Challonge account
+        const userConnection = await prisma.challongeConnection.findUnique({
+          where: { userId: request.user.sub },
+          select: { challongeUsername: true },
+        });
+
+        if (!userConnection?.challongeUsername) {
+          return reply.status(403).send({ 
+            error: 'You must have a Challonge account connected' 
+          });
+        }
+
+        // Find the user's participant entry in the tournament
+        const participants = await fetchTournamentParticipants(tournamentIdentifier);
+        
+        if (!participants) {
+          return reply.status(500).send({ error: 'Failed to fetch tournament participants' });
+        }
+
+        const userParticipant = participants.find(
+          (p) => p.attributes.username === userConnection.challongeUsername ||
+                 p.attributes.name === userConnection.challongeUsername
+        );
+
+        if (!userParticipant) {
+          return reply.status(404).send({ 
+            error: 'You are not a participant in this tournament' 
+          });
+        }
+
+        if (!CHALLONGE_CONFIG.apiKey || CHALLONGE_CONFIG.apiKey === 'YOUR_CHALLONGE_API_KEY') {
+          return reply.status(500).send({ error: 'Challonge API key not configured' });
+        }
+
+        // Delete participant using Challonge API
+        const deleteParticipantResponse = await fetch(
+          `https://api.challonge.com/v2.1/tournaments/${tournamentIdentifier}/participants/${userParticipant.id}.json`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Authorization-Type': 'v1',
+              'Authorization': CHALLONGE_CONFIG.apiKey,
+              'Content-Type': 'application/vnd.api+json',
+              'Accept': 'application/json',
+            },
+          }
+        );
+
+        if (!deleteParticipantResponse.ok) {
+          const errorText = await deleteParticipantResponse.text();
+          console.error('Failed to delete participant:', errorText);
+          return reply.status(deleteParticipantResponse.status).send({ 
+            error: 'Failed to leave tournament' 
+          });
+        }
+
+        // Invalidate cache for this tournament
+        invalidateParticipantsCache(tournamentIdentifier);
+
+        // Update tournament participant count in local DB
+        const updatedTournament = await prisma.tournament.findUnique({
+          where: { id },
+        });
+
+        if (updatedTournament && updatedTournament.participantCount > 0) {
+          await prisma.tournament.update({
+            where: { id },
+            data: {
+              participantCount: updatedTournament.participantCount - 1,
+              lastSyncedAt: new Date(),
+            },
+          });
+        }
+
+        return reply.send({
+          success: true,
+          message: 'Successfully left tournament',
+        });
+      } catch (error) {
+        console.error('Error leaving tournament:', error);
+        return reply.status(500).send({ error: 'Failed to leave tournament' });
       }
     }
   });
