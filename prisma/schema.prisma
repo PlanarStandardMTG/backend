@@ -46,18 +46,43 @@ model Match {
 }
 
 model ChallongeConnection {
-  id            String    @id @default(cuid())
-  userId        String    @unique
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  accessToken   String
-  refreshToken  String
-  expiresAt     DateTime
-  scope         String?
+  accessToken         String
+  refreshToken        String
+  expiresAt           DateTime
+  scope               String?
+  challongeUsername   String?
   
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  tournaments         Tournament[]
   
   @@index([userId])
+}
+
+model Tournament {
+  id                    String    @id @default(cuid())
+  challongeId           String    @unique
+  userId                String?
+  connection            ChallongeConnection? @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  
+  name                  String
+  tournamentType        String
+  url                   String?
+  state                 String?
+  startsAt              DateTime?
+  gameName              String?
+  participantCount      Int       @default(0)
+  
+  lastSyncedAt          DateTime  @default(now())
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@index([userId])
+  @@index([challongeId])
 }
 
