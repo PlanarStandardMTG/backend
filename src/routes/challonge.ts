@@ -106,9 +106,13 @@ export default async function challongeRoutes(app: FastifyInstance) {
         // Fetch user's Challonge username
         let challongeUsername: string | undefined;
         console.log('Attempting to fetch Challonge username...');
+        console.log('Access token (first 20 chars):', tokenData.access_token.substring(0, 20));
+        
         try {
+          // Use Authorization-Type: v2 for OAuth2 tokens
           const meResponse = await fetch('https://api.challonge.com/v2.1/me.json', {
             headers: {
+              'Authorization-Type': 'v2',
               'Authorization': `Bearer ${tokenData.access_token}`,
               'Content-Type': 'application/vnd.api+json',
               'Accept': 'application/json',
@@ -130,7 +134,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
             console.log('Extracted Challonge username:', challongeUsername);
           } else {
             const errorText = await meResponse.text();
-            console.error('Challonge /me.json failed with status:', meResponse.status, 'Error:', errorText);
+            console.error('Challonge /me.json failed. Status:', meResponse.status, 'Error:', errorText);
           }
         } catch (error) {
           console.error('Exception while fetching Challonge username:', error);
