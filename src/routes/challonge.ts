@@ -183,6 +183,19 @@ export default async function challongeRoutes(app: FastifyInstance) {
         
         console.log('Final challongeUsername to save:', challongeUsername);
 
+        // Verify user exists in database before creating connection
+        const user = await prisma.user.findUnique({
+          where: { id: request.user.sub },
+          select: { id: true },
+        });
+
+        if (!user) {
+          console.error('User not found in database:', request.user.sub);
+          return reply.status(404).send({ 
+            error: 'User account not found. Please log in again.' 
+          });
+        }
+
         // Store or update the connection
         const connection = await prisma.challongeConnection.upsert({
           where: { userId: request.user.sub },
