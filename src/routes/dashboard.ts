@@ -1,6 +1,7 @@
 import { type FastifyInstance } from "fastify";
 import { prisma } from "../plugins/prisma.js";
 import { userPublicSelect, userPrivateSelect } from "../utils/prismaSelects.js";
+import { validatePagination, isValidUUID } from "../utils/validation.js";
 
 interface LeaderboardEntry {
   rank: number;
@@ -44,8 +45,20 @@ export async function dashboardRoutes(app: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const limit = Math.min(parseInt(request.query.limit || "100"), 500);
-        const offset = parseInt(request.query.offset || "0");
+        const pagination = validatePagination(
+          request.query.limit || "100",
+          request.query.offset
+        );
+
+        if (!pagination.valid) {
+          return reply.status(400).send({
+            error: "Validation error",
+            message: pagination.error
+          });
+        }
+
+        // Cap leaderboard at 500 entries max for performance
+        const limit = Math.min(pagination.limit, 500);
 
         // Get all users with match statistics
         const users = await prisma.user.findMany({
@@ -58,7 +71,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
           },
           orderBy: { elo: "desc" },
           take: limit,
-          skip: offset,
+          skip: pagination.offset,
         });
 
         const leaderboard: LeaderboardEntry[] = users.map((user: any, index: number) => {
@@ -80,7 +93,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
           const winRate = totalMatches > 0 ? (wins / totalMatches) * 100 : 0;
 
           return {
-            rank: offset + index + 1,
+            rank: pagination.offset + index + 1,
             id: user.id,
             username: user.username,
             elo: user.elo,
@@ -94,7 +107,10 @@ export async function dashboardRoutes(app: FastifyInstance) {
         return reply.send(leaderboard);
       } catch (error) {
         console.error("Error fetching leaderboard:", error);
-        return reply.status(500).send({ error: "Failed to fetch leaderboard" });
+        return reply.status(500).send({ 
+          error: "Internal server error",
+          message: "Failed to fetch leaderboard" 
+        });
       }
     }
   );
@@ -109,6 +125,14 @@ export async function dashboardRoutes(app: FastifyInstance) {
       try {
         const { userId } = request.params;
 
+        // Validate user ID format
+        if (!isValidUUID(userId)) {
+          return reply.status(400).send({
+            error: "Validation error",
+            message: "Invalid user ID format"
+          });
+        }
+
         const user = await prisma.user.findUnique({
           where: { id: userId },
           select: {
@@ -119,7 +143,10 @@ export async function dashboardRoutes(app: FastifyInstance) {
         });
 
         if (!user) {
-          return reply.status(404).send({ error: "User not found" });
+          return reply.status(404).send({ 
+            error: "Not found",
+            message: "User not found" 
+          });
         }
 
         // Process matches
@@ -193,7 +220,10 @@ export async function dashboardRoutes(app: FastifyInstance) {
         return reply.send(stats);
       } catch (error) {
         console.error("Error fetching user stats:", error);
-        return reply.status(500).send({ error: "Failed to fetch user stats" });
+        return reply.status(500).send({ 
+          error: "Internal server error",
+          message: "Failed to fetch user stats" 
+        });
       }
     }
   );
@@ -218,7 +248,10 @@ export async function dashboardRoutes(app: FastifyInstance) {
         });
 
         if (!user) {
-          return reply.status(404).send({ error: "User not found" });
+          return reply.status(404).send({ 
+            error: "Not found",
+            message: "User not found" 
+          });
         }
 
         // Process matches
@@ -292,7 +325,10 @@ export async function dashboardRoutes(app: FastifyInstance) {
         return reply.send(stats);
       } catch (error) {
         console.error("Error fetching user stats:", error);
-        return reply.status(500).send({ error: "Failed to fetch user stats" });
+        return reply.status(500).send({ 
+          error: "Internal server error",
+          message: "Failed to fetch user stats" 
+        });
       }
     }
   );

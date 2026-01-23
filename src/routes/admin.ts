@@ -1,6 +1,7 @@
 import { type FastifyInstance } from "fastify";
 import { prisma } from "../plugins/prisma.js";
 import { calculateMatchWins } from "../utils/elo.js";
+import { validatePagination, isValidUUID } from "../utils/validation.js";
 
 export async function adminRoutes(app: FastifyInstance) {
   // Get all users (admin only, paginated)
@@ -13,18 +14,13 @@ export async function adminRoutes(app: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const limit = parseInt(request.query.limit || "10", 10);
-        const offset = parseInt(request.query.offset || "0", 10);
+        const pagination = validatePagination(request.query.limit, request.query.offset);
 
-        // Validate pagination parameters
-        if (limit < 1 || limit > 100) {
-          return reply
-            .status(400)
-            .send({ error: "Limit must be between 1 and 100" });
-        }
-
-        if (offset < 0) {
-          return reply.status(400).send({ error: "Offset must be non-negative" });
+        if (!pagination.valid) {
+          return reply.status(400).send({
+            error: "Validation error",
+            message: pagination.error
+          });
         }
 
         // Get total count and users
@@ -44,8 +40,8 @@ export async function adminRoutes(app: FastifyInstance) {
             orderBy: {
               createdAt: "desc",
             },
-            take: limit,
-            skip: offset,
+            take: pagination.limit,
+            skip: pagination.offset,
           }),
         ]);
 
@@ -89,15 +85,18 @@ export async function adminRoutes(app: FastifyInstance) {
         return reply.send({
           users: usersWithStats,
           pagination: {
-            limit,
-            offset,
+            limit: pagination.limit,
+            offset: pagination.offset,
             total,
-            hasMore: offset + limit < total,
+            hasMore: pagination.offset + pagination.limit < total,
           },
         });
       } catch (error) {
         console.error("Error fetching users:", error);
-        return reply.status(500).send({ error: "Failed to fetch users" });
+        return reply.status(500).send({ 
+          error: "Internal server error",
+          message: "Failed to fetch users" 
+        });
       }
     }
   );

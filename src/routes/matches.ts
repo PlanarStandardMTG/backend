@@ -2,6 +2,7 @@ import { type FastifyInstance } from "fastify";
 import { prisma } from "../plugins/prisma.js";
 import { calculateEloChange } from "../utils/elo.js";
 import { userPublicSelect } from "../utils/prismaSelects.js";
+import { isValidUUID, validatePagination } from "../utils/validation.js";
 
 interface CreateMatchRequest {
   player1Id: string;
@@ -23,18 +24,13 @@ export async function matchRoutes(app: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const limit = parseInt(request.query.limit || "10", 10);
-        const offset = parseInt(request.query.offset || "0", 10);
+        const pagination = validatePagination(request.query.limit, request.query.offset);
 
-        // Validate pagination parameters
-        if (limit < 1 || limit > 100) {
-          return reply
-            .status(400)
-            .send({ error: "Limit must be between 1 and 100" });
-        }
-
-        if (offset < 0) {
-          return reply.status(400).send({ error: "Offset must be non-negative" });
+        if (!pagination.valid) {
+          return reply.status(400).send({ 
+            error: "Validation error",
+            message: pagination.error 
+          });
         }
 
         // Get total count and matches
@@ -52,23 +48,26 @@ export async function matchRoutes(app: FastifyInstance) {
             orderBy: {
               createdAt: "desc",
             },
-            take: limit,
-            skip: offset,
+            take: pagination.limit,
+            skip: pagination.offset,
           }),
         ]);
 
         return reply.send({
           matches,
           pagination: {
-            limit,
-            offset,
+            limit: pagination.limit,
+            offset: pagination.offset,
             total,
-            hasMore: offset + limit < total,
+            hasMore: pagination.offset + pagination.limit < total,
           },
         });
       } catch (error) {
         console.error("Error fetching matches:", error);
-        return reply.status(500).send({ error: "Failed to fetch matches" });
+        return reply.status(500).send({ 
+          error: "Internal server error",
+          message: "Failed to fetch matches" 
+        });
       }
     }
   );
@@ -83,6 +82,37 @@ export async function matchRoutes(app: FastifyInstance) {
       try {
         const { player1Id, player2Id } = request.body;
 
+        // Validate required fields
+        if (!player1Id || !player2Id) {
+          return reply.status(400).send({ 
+            error: "Validation error",
+            message: "Both player IDs are required" 
+          });
+        }
+
+        // Validate UUID format
+        if (!isValidUUID(player1Id)) {
+          return reply.status(400).send({ 
+            error: "Validation error",
+            message: "Invalid player 1 ID format" 
+          });
+        }
+
+        if (!isValidUUID(player2Id)) {
+          return reply.status(400).send({ 
+            error: "Validation error",
+            message: "Invalid player 2 ID format" 
+          });
+        }
+
+        // Prevent self-matching
+        if (player1Id === player2Id) {
+          return reply.status(400).send({ 
+            error: "Validation error",
+            message: "Cannot create match against yourself" 
+          });
+        }
+
         // Validate that both players exist
         const [player1, player2] = await Promise.all([
           prisma.user.findUnique({ where: { id: player1Id } }),
@@ -90,18 +120,17 @@ export async function matchRoutes(app: FastifyInstance) {
         ]);
 
         if (!player1) {
-          return reply.status(404).send({ error: "Player 1 not found" });
+          return reply.status(404).send({ 
+            error: "Not found",
+            message: "Player 1 not found" 
+          });
         }
 
         if (!player2) {
-          return reply.status(404).send({ error: "Player 2 not found" });
-        }
-
-        // Prevent self-matching
-        if (player1Id === player2Id) {
-          return reply
-            .status(400)
-            .send({ error: "Cannot create match against yourself" });
+          return reply.status(404).send({ 
+            error: "Not found",
+            message: "Player 2 not found" 
+          });
         }
 
         // Create the match
@@ -123,7 +152,10 @@ export async function matchRoutes(app: FastifyInstance) {
         return reply.status(201).send(match);
       } catch (error) {
         console.error("Error creating match:", error);
-        return reply.status(500).send({ error: "Failed to create match" });
+        return reply.status(500).send({ 
+          error: "Internal server error",
+          message: "Failed to create match" 
+        });
       }
     }
   );
@@ -138,7 +170,29 @@ export async function matchRoutes(app: FastifyInstance) {
       try {
         const { matchId } = request.params;
         const { winnerId } = request.body;
-        const userId = request.user.sub;
+
+        // Validate match ID format
+        if (!isValidUUID(matchId)) {
+          return reply.status(400).send({ 
+            error: "Validation error",
+            message: "Invalid match ID format" 
+          });
+        }
+
+        // Validate winner ID
+        if (!winnerId) {
+          return reply.status(400).send({ 
+            error: "Validation error",
+            message: "Winner ID is required" 
+          });
+        }
+
+        if (!isValidUUID(winnerId)) {
+          return reply.status(400).send({ 
+            error: "Validation error",
+            message: "Invalid winner ID format" 
+          });
+        }
 
         // Fetch the match
         const match = await prisma.match.findUnique({
@@ -150,22 +204,26 @@ export async function matchRoutes(app: FastifyInstance) {
         });
 
         if (!match) {
-          return reply.status(404).send({ error: "Match not found" });
+          return reply.status(404).send({ 
+            error: "Not found",
+            message: "Match not found" 
+          });
         }
 
         // Verify match hasn't already been completed
         if (match.completedAt) {
-          return reply.status(400).send({ error: "Match already completed" });
+          return reply.status(400).send({ 
+            error: "Validation error",
+            message: "Match already completed" 
+          });
         }
 
         // Validate that winnerId is one of the players
-        if (
-          winnerId !== match.player1Id &&
-          winnerId !== match.player2Id
-        ) {
-          return reply
-            .status(400)
-            .send({ error: "Winner must be one of the match players" });
+        if (winnerId !== match.player1Id && winnerId !== match.player2Id) {
+          return reply.status(400).send({ 
+            error: "Validation error",
+            message: "Winner must be one of the match players" 
+          });
         }
 
         // Determine who won
@@ -178,19 +236,17 @@ export async function matchRoutes(app: FastifyInstance) {
           player1Won
         );
 
-        // Update the match and player ELOs
-        const updatedMatch = await prisma.match.update({
-          where: { id: matchId },
-          data: {
-            winner: winnerId,
-            player1EloChange: eloResult.player1Change,
-            player2EloChange: eloResult.player2Change,
-            completedAt: new Date(),
-          },
-        });
-
-        // Update both players' ELO ratings
-        await Promise.all([
+        // Update the match and player ELOs in a transaction
+        await prisma.$transaction([
+          prisma.match.update({
+            where: { id: matchId },
+            data: {
+              winner: winnerId,
+              player1EloChange: eloResult.player1Change,
+              player2EloChange: eloResult.player2Change,
+              completedAt: new Date(),
+            },
+          }),
           prisma.user.update({
             where: { id: match.player1Id },
             data: { elo: eloResult.player1NewElo },
@@ -221,7 +277,10 @@ export async function matchRoutes(app: FastifyInstance) {
         });
       } catch (error) {
         console.error("Error completing match:", error);
-        return reply.status(500).send({ error: "Failed to complete match" });
+        return reply.status(500).send({ 
+          error: "Internal server error",
+          message: "Failed to complete match" 
+        });
       }
     }
   );
@@ -236,6 +295,14 @@ export async function matchRoutes(app: FastifyInstance) {
       try {
         const { matchId } = request.params;
 
+        // Validate match ID format
+        if (!isValidUUID(matchId)) {
+          return reply.status(400).send({ 
+            error: "Validation error",
+            message: "Invalid match ID format" 
+          });
+        }
+
         const match = await prisma.match.findUnique({
           where: { id: matchId },
           include: {
@@ -249,13 +316,19 @@ export async function matchRoutes(app: FastifyInstance) {
         });
 
         if (!match) {
-          return reply.status(404).send({ error: "Match not found" });
+          return reply.status(404).send({ 
+            error: "Not found",
+            message: "Match not found" 
+          });
         }
 
         return reply.send(match);
       } catch (error) {
         console.error("Error fetching match:", error);
-        return reply.status(500).send({ error: "Failed to fetch match" });
+        return reply.status(500).send({ 
+          error: "Internal server error",
+          message: "Failed to fetch match" 
+        });
       }
     }
   );
@@ -271,18 +344,14 @@ export async function matchRoutes(app: FastifyInstance) {
     async (request, reply) => {
       try {
         const userId = request.user.sub;
-        const limit = parseInt(request.query.limit || "10", 10);
-        const offset = parseInt(request.query.offset || "0", 10);
+        
+        const pagination = validatePagination(request.query.limit, request.query.offset);
 
-        // Validate pagination parameters
-        if (limit < 1 || limit > 100) {
-          return reply
-            .status(400)
-            .send({ error: "Limit must be between 1 and 100" });
-        }
-
-        if (offset < 0) {
-          return reply.status(400).send({ error: "Offset must be non-negative" });
+        if (!pagination.valid) {
+          return reply.status(400).send({ 
+            error: "Validation error",
+            message: pagination.error 
+          });
         }
 
         // Get total count and matches
@@ -307,23 +376,26 @@ export async function matchRoutes(app: FastifyInstance) {
             orderBy: {
               createdAt: "desc",
             },
-            take: limit,
-            skip: offset,
+            take: pagination.limit,
+            skip: pagination.offset,
           }),
         ]);
 
         return reply.send({
           matches,
           pagination: {
-            limit,
-            offset,
+            limit: pagination.limit,
+            offset: pagination.offset,
             total,
-            hasMore: offset + limit < total,
+            hasMore: pagination.offset + pagination.limit < total,
           },
         });
       } catch (error) {
         console.error("Error fetching user matches:", error);
-        return reply.status(500).send({ error: "Failed to fetch matches" });
+        return reply.status(500).send({ 
+          error: "Internal server error",
+          message: "Failed to fetch matches" 
+        });
       }
     }
   );

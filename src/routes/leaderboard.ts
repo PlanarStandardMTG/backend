@@ -1,15 +1,27 @@
 import { FastifyPluginAsync } from "fastify";
 import { prisma } from "../plugins/prisma.js";
+import { validatePagination } from "../utils/validation.js";
 
 export const leaderboardRoutes: FastifyPluginAsync = async (app) => {
     app.get("/", async (request, reply) => {
         try {
             const { page = 1, limit = 50 } = request.query as { page?: number; limit?: number };
             const pageNum = Number(page);
-            const limitNum = Number(limit);
+            const limitNum = Math.min(Number(limit), 100); // Cap at 100
 
-            if (pageNum < 1 || limitNum < 1 || limitNum > 100) {
-                return reply.code(400).send({ error: "Invalid pagination parameters" });
+            // Validate pagination
+            if (isNaN(pageNum) || pageNum < 1) {
+                return reply.code(400).send({ 
+                    error: "Validation error",
+                    message: "Page must be a positive number" 
+                });
+            }
+
+            if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+                return reply.code(400).send({ 
+                    error: "Validation error",
+                    message: "Limit must be between 1 and 100" 
+                });
             }
 
             const skip = (pageNum - 1) * limitNum;
@@ -87,7 +99,10 @@ export const leaderboardRoutes: FastifyPluginAsync = async (app) => {
             });
         } catch (error) {
             console.error("Error fetching leaderboard:", error);
-            return reply.code(500).send({ error: "Failed to fetch leaderboard" });
+            return reply.code(500).send({ 
+                error: "Internal server error",
+                message: "Failed to fetch leaderboard" 
+            });
         }
     });
 };
