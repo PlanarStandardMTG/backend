@@ -10,7 +10,7 @@ datasource db {
 }
 
 model User {
-  id                    String    @id @default(cuid())
+  id                    String    @id @default(uuid())
   email                 String    @unique
   username              String    @unique
   password              String
@@ -27,7 +27,7 @@ model User {
 }
 
 model Match {
-  id          String    @id @default(cuid())
+  id          String    @id @default(uuid())
   player1Id   String
   player2Id   String
   
@@ -46,7 +46,7 @@ model Match {
 }
 
 model ChallongeConnection {
-  id                  String    @id @default(cuid())
+  id                  String    @id @default(uuid())
   userId              String    @unique
   user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   
@@ -65,7 +65,7 @@ model ChallongeConnection {
 }
 
 model Tournament {
-  id                    String    @id @default(cuid())
+  id                    String    @id @default(uuid())
   challongeId           String    @unique
   userId                String?
   connection            ChallongeConnection? @relation(fields: [userId], references: [userId], onDelete: Cascade)
