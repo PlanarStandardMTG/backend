@@ -1,6 +1,8 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { prisma } from '../plugins/prisma.js';
 
+const CHALLONGE_API_BASE = 'https://api.challonge.com/v2.1/communities/planarstandardmtg';
+
 // Challonge OAuth Configuration
 const CHALLONGE_CONFIG = {
   clientId: process.env.CHALLONGE_CLIENT_ID || 'YOUR_CHALLONGE_CLIENT_ID',
@@ -151,7 +153,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
         
         try {
           // Use Authorization-Type: v2 for OAuth2 tokens
-          const meResponse = await fetch('https://api.challonge.com/v2.1/me.json', {
+          const meResponse = await fetch(`${CHALLONGE_API_BASE}/me.json`, {
             headers: {
               'Authorization-Type': 'v2',
               'Authorization': `Bearer ${tokenData.access_token}`,
@@ -517,7 +519,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
     // Fetch from API
     try {
       const participantsResponse = await fetch(
-        `https://api.challonge.com/v2.1/tournaments/${tournamentId}/participants.json`,
+        `${CHALLONGE_API_BASE}/tournaments/${tournamentId}/participants.json`,
         {
           method: 'GET',
           headers: {
@@ -556,7 +558,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
         }
 
         // Fetch tournaments from Challonge API using app's API key
-        const tournamentsResponse = await fetch('https://api.challonge.com/v2.1/tournaments.json', {
+        const tournamentsResponse = await fetch(`${CHALLONGE_API_BASE}/tournaments.json`, {
           method: 'GET',
           headers: {
             'Authorization-Type': 'v1',
@@ -694,7 +696,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
         }
 
         // Fetch tournament from Challonge API using app's API key
-        const tournamentResponse = await fetch(`https://api.challonge.com/v2.1/tournaments/${id}.json`, {
+        const tournamentResponse = await fetch(`${CHALLONGE_API_BASE}/tournaments/${id}.json`, {
           method: 'GET',
           headers: {
             'Authorization-Type': 'v1',
@@ -861,7 +863,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
 
         // Create participant using Challonge API
         const createParticipantResponse = await fetch(
-          `https://api.challonge.com/v2.1/tournaments/${tournamentIdentifier}/participants.json`,
+          `${CHALLONGE_API_BASE}/tournaments/${tournamentIdentifier}/participants.json`,
           {
             method: 'POST',
             headers: {
@@ -987,7 +989,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
 
         // Delete participant using Challonge API
         const deleteParticipantResponse = await fetch(
-          `https://api.challonge.com/v2.1/tournaments/${tournamentIdentifier}/participants/${userParticipant.id}.json`,
+          `${CHALLONGE_API_BASE}/tournaments/${tournamentIdentifier}/participants/${userParticipant.id}.json`,
           {
             method: 'DELETE',
             headers: {
