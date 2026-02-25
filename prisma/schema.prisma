@@ -30,9 +30,11 @@ model Match {
   id          String    @id @default(uuid())
   player1Id   String
   player2Id   String
+  tournamentId String?  // optional link to a tournament
   
   player1     User      @relation("player1", fields: [player1Id], references: [id], onDelete: Cascade)
   player2     User      @relation("player2", fields: [player2Id], references: [id], onDelete: Cascade)
+  tournament  Tournament? @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   
   winner      String?
   player1EloChange  Int?
@@ -43,6 +45,7 @@ model Match {
   
   @@index([player1Id])
   @@index([player2Id])
+  @@index([tournamentId])
 }
 
 model ChallongeConnection {
@@ -77,7 +80,10 @@ model Tournament {
   startsAt              DateTime?
   gameName              String?
   participantCount      Int       @default(0)
+  ratingsUpdated        Boolean   @default(false)
   
+  matches               Match[]
+
   lastSyncedAt          DateTime  @default(now())
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
