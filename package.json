@@ -9,7 +9,8 @@
   "scripts": {
     "build": "prisma generate && tsc",
     "start": "node dist/src/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev":   "npm run build && npm start",
+    "test":  "echo \"Error: no test specified\" && exit 1",
     "postinstall": "prisma generate"
   },
   "keywords": [],

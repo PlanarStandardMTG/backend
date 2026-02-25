@@ -549,8 +549,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
 
   // Get all tournaments associated with the app (using API key)
   app.get('/tournaments', {
-    onRequest: [app.authenticate],
-    handler: async (request: AuthenticatedRequest, reply) => {
+    handler: async (request: FastifyRequest, reply) => {
       try {
         if (!CHALLONGE_CONFIG.apiKey || CHALLONGE_CONFIG.apiKey === 'YOUR_CHALLONGE_API_KEY') {
           return reply.status(500).send({ error: 'Challonge API key not configured' });
@@ -591,32 +590,14 @@ export default async function challongeRoutes(app: FastifyInstance) {
           }>;
         };
 
-        // Get user's Challonge connection to check participation
-        const userConnection = await prisma.challongeConnection.findUnique({
-          where: { userId: request.user.sub },
-          select: { challongeUsername: true },
-        });
-
         // Sync tournaments to local database and check participation
         const tournaments = await Promise.all(
-          tournamentsData.data.map(async (tournament) => {
-            const tournamentData = {
-              challongeId: tournament.id,
-              userId: null,
-              name: tournament.attributes.name,
-              tournamentType: tournament.attributes.tournament_type,
-              url: tournament.attributes.url || null,
-              state: tournament.attributes.state || null,
-              startsAt: tournament.attributes.starts_at ? new Date(tournament.attributes.starts_at) : null,
-              gameName: tournament.attributes.game_name || null,
-              participantCount: tournament.attributes.participants_count || 0,
-              lastSyncedAt: new Date(),
-            };
-
-            const savedTournament = await prisma.tournament.upsert({
-              where: { challongeId: tournament.id },
-              create: tournamentData,
-              update: {
+          tournamentsData.data
+            .filter((tournament) => !tournament.attributes.name.includes('[TEST]'))
+            .map(async (tournament) => {
+              const tournamentData = {
+                challongeId: tournament.id,
+                userId: null,
                 name: tournament.attributes.name,
                 tournamentType: tournament.attributes.tournament_type,
                 url: tournament.attributes.url || null,
@@ -625,42 +606,69 @@ export default async function challongeRoutes(app: FastifyInstance) {
                 gameName: tournament.attributes.game_name || null,
                 participantCount: tournament.attributes.participants_count || 0,
                 lastSyncedAt: new Date(),
-                updatedAt: new Date(),
-              },
-            });
+              };
 
-            // Check if user is a participant
-            let isParticipant = false;
-            let userChallongeUsername: string | null = null;
-            console.log('User connection:', userConnection);
+              const savedTournament = await prisma.tournament.upsert({
+                where: { challongeId: tournament.id },
+                create: tournamentData,
+                update: {
+                  name: tournament.attributes.name,
+                  tournamentType: tournament.attributes.tournament_type,
+                  url: tournament.attributes.url || null,
+                  state: tournament.attributes.state || null,
+                  startsAt: tournament.attributes.starts_at ? new Date(tournament.attributes.starts_at) : null,
+                  gameName: tournament.attributes.game_name || null,
+                  participantCount: tournament.attributes.participants_count || 0,
+                  lastSyncedAt: new Date(),
+                  updatedAt: new Date(),
+                },
+              });
 
-            if (userConnection?.challongeUsername) {
-              console.log('Checking participation for user:', userConnection.challongeUsername);
+              let isParticipant = false;
+              let userChallongeUsername: string | null = null;
+
               try {
-                const participants = await fetchTournamentParticipants(tournament.id);
+                await request.jwtVerify();
+                // Get user's Challonge connection to check participation
+                const userConnection = await prisma.challongeConnection.findUnique({
+                  where: { userId: request.user.sub },
+                  select: { challongeUsername: true },
+                });
 
-                if (participants) {
-                  const participant = participants.find(
-                    (p) => p.attributes.username === userConnection.challongeUsername ||
-                           p.attributes.name === userConnection.challongeUsername
-                  );
+                // Check if user is a participant
+                console.log('User connection:', userConnection);
 
-                  if (participant) {
-                    isParticipant = true;
-                    userChallongeUsername = userConnection.challongeUsername;
+                if (userConnection?.challongeUsername) {
+                  console.log('Checking participation for user:', userConnection.challongeUsername);
+                  try {
+                    const participants = await fetchTournamentParticipants(tournament.id);
+
+                    if (participants) {
+                      const participant = participants.find(
+                        (p) => p.attributes.username === userConnection.challongeUsername ||
+                              p.attributes.name === userConnection.challongeUsername
+                      );
+
+                      if (participant) {
+                        isParticipant = true;
+                        userChallongeUsername = userConnection.challongeUsername;
+                      }
+                    }
+                  } catch (error) {
+                    console.warn(`Failed to fetch participants for tournament ${tournament.id}:`, error);
                   }
                 }
               } catch (error) {
-                console.warn(`Failed to fetch participants for tournament ${tournament.id}:`, error);
+                console.log("[TOURNAMENTS] Unauthenticated request - skipping participation check.");
               }
-            }
 
-            return {
-              ...savedTournament,
-              isParticipant,
-              userChallongeUsername,
-            };
-          })
+              return {
+                ...savedTournament,
+                isParticipant,
+                userChallongeUsername,
+              };
+            }
+          )
         );
 
         return reply.send({
