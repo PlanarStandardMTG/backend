@@ -3,6 +3,7 @@ import { prisma } from '../plugins/prisma.js';
 import { getOrCreateRankedForUsername } from '../utils/ranked.js';
 import { AuthenticatedRequest } from '../utils/auth.js';
 
+export const CHALLONGE_API_NO_COMMUNITY_BASE = 'https://api.challonge.com/v2.1';
 export const CHALLONGE_API_BASE = 'https://api.challonge.com/v2.1/communities/planarstandardmtg';
 
 // Challonge OAuth Configuration
@@ -196,7 +197,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
         
         try {
           // Use Authorization-Type: v2 for OAuth2 tokens
-          const meResponse = await fetch(`${CHALLONGE_API_BASE}/me.json`, {
+          const meResponse = await fetch(`${CHALLONGE_API_NO_COMMUNITY_BASE}/me.json`, {
             headers: {
               'Authorization-Type': 'v2',
               'Authorization': `Bearer ${tokenData.access_token}`,
