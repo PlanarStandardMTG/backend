@@ -14,65 +14,83 @@ model User {
   email                 String    @unique
   username              String    @unique
   password              String
-  elo                   Int       @default(1600)
   admin                 Boolean   @default(false)
   tournamentOrganizer   Boolean   @default(false)
   blogger               Boolean   @default(false)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
-  
-  matchesAsPlayer1      Match[]               @relation("player1")
-  matchesAsPlayer2      Match[]               @relation("player2")
-  challongeConnection   ChallongeConnection?
+
+  // user no longer directly references matches or challonge connections
+  // rankedInfo remains the central link to matchmaking and external accounts
+  rankedInfo            RankedUserInfo?       @relation(fields: [rankedInfoId], references: [id])
+  rankedInfoId          String?  @unique
 }
 
 model Match {
-  id          String    @id @default(uuid())
-  player1Id   String
-  player2Id   String
-  tournamentId String?  // optional link to a tournament
+  id               String    @id @default(uuid())
+
+  // only ranked-user relationships now
+  player1RankedId  String
+  player2RankedId  String
+  winnerRankedId   String?
+
+  tournamentId     String?  // optional link to a tournament
   
-  player1     User      @relation("player1", fields: [player1Id], references: [id], onDelete: Cascade)
-  player2     User      @relation("player2", fields: [player2Id], references: [id], onDelete: Cascade)
-  tournament  Tournament? @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  player1Ranked    RankedUserInfo @relation("rankedPlayer1", fields: [player1RankedId], references: [id], onDelete: Cascade)
+  player2Ranked    RankedUserInfo @relation("rankedPlayer2", fields: [player2RankedId], references: [id], onDelete: Cascade)
+  winnerRanked     RankedUserInfo? @relation("winnerRanked", fields: [winnerRankedId], references: [id])
+
+  tournament        Tournament? @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   
-  winner      String?
   player1EloChange  Int?
   player2EloChange  Int?
   
-  createdAt   DateTime  @default(now())
-  completedAt DateTime?
+  createdAt         DateTime  @default(now())
+  completedAt       DateTime?
   
-  @@index([player1Id])
-  @@index([player2Id])
+  @@index([player1RankedId])
+  @@index([player2RankedId])
   @@index([tournamentId])
 }
 
 model ChallongeConnection {
   id                  String    @id @default(uuid())
-  userId              String    @unique
-  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  accessToken         String
-  refreshToken        String
-  expiresAt           DateTime
+
+  accessToken         String?
+  refreshToken        String?
+  expiresAt           DateTime?
   scope               String?
-  challongeUsername   String?
+  challongeUsername   String   @unique
+  
+  // linked ranked record, which in turn may point to a user
+  rankedInfo         RankedUserInfo? @relation(fields: [rankedInfoId], references: [id])
+  rankedInfoId       String?  @unique
   
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
-  
-  tournaments         Tournament[]
-  
-  @@index([userId])
+}
+
+model RankedUserInfo {
+  id               String    @id @default(uuid())
+  userId           String?   @unique
+  connectionId     String?   @unique
+  username         String    @unique
+  elo              Int       @default(1600)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user             User?
+  connection       ChallongeConnection?
+
+  matchesAsPlayer1 Match[]   @relation("rankedPlayer1")
+  matchesAsPlayer2 Match[]   @relation("rankedPlayer2")
+  wonMatches       Match[]   @relation("winnerRanked")
 }
 
 model Tournament {
   id                    String    @id @default(uuid())
   challongeId           String    @unique
-  userId                String?
-  connection            ChallongeConnection? @relation(fields: [userId], references: [userId], onDelete: Cascade)
-  
+
   name                  String
   tournamentType        String
   url                   String?
@@ -88,7 +106,6 @@ model Tournament {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   
-  @@index([userId])
   @@index([challongeId])
 }
 

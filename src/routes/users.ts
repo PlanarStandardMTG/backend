@@ -11,7 +11,8 @@ export async function userRoutes(fastify: FastifyInstance) {
         async (request: any, reply: FastifyReply) => {
             try {
                 const user = await fastify.prisma.user.findUnique({
-                    where: { id: request.user.sub }
+                    where: { id: request.user.sub },
+                    include: { rankedInfo: true }
                 });
 
                 if (!user) {
@@ -21,9 +22,59 @@ export async function userRoutes(fastify: FastifyInstance) {
                     });
                 }
 
-                return createUserResponse(user);
+                const ranked = await fastify.prisma.rankedUserInfo.findUnique({
+                    where: { userId: user.id }
+                });
+
+                // merge elo from rankedInfo if available
+                const response = createUserResponse({
+                    ...user,
+                    elo: ranked?.elo ?? 1600
+                });
+                return response;
             } catch (error) {
                 console.error("Get user error:", error);
+                return reply.code(500).send({
+                    error: "Internal server error",
+                    message: "An error occurred while fetching user data"
+                });
+            }
+        }
+    );
+
+    // Get a user's ranked info and username by their ID (logged-in only)
+    fastify.get(
+        "/:id",
+        {
+            preHandler: [fastify.authenticate]
+        },
+        async (request: any, reply: FastifyReply) => {
+            const { id } = request.params as { id: string };
+            try {
+                // ensure the user exists before returning any details
+                const user = await fastify.prisma.user.findUnique({
+                    where: { id }
+                });
+
+                if (!user) {
+                    return reply.code(404).send({
+                        error: "Not found",
+                        message: "User not found"
+                    });
+                }
+
+                // fetch the ranked info record that is linked to this user
+                const ranked = await fastify.prisma.rankedUserInfo.findUnique({
+                    where: { userId: id }
+                });
+
+                return {
+                    username: user.username,
+                    rankedInfoId: ranked?.id ?? null,
+                    elo: ranked?.elo ?? 1600
+                };
+            } catch (error) {
+                console.error("Get user by id error:", error);
                 return reply.code(500).send({
                     error: "Internal server error",
                     message: "An error occurred while fetching user data"

@@ -26,8 +26,8 @@ export const leaderboardRoutes: FastifyPluginAsync = async (app) => {
 
             const skip = (pageNum - 1) * limitNum;
 
-            // Get all users with at least one match played
-            const users = await prisma.user.findMany({
+            // Get ranked players with at least one match played
+            const rankedPlayers = await prisma.rankedUserInfo.findMany({
                 where: {
                     OR: [
                         { matchesAsPlayer1: { some: {} } },
@@ -36,22 +36,25 @@ export const leaderboardRoutes: FastifyPluginAsync = async (app) => {
                 },
                 select: {
                     id: true,
-                    username: true,
                     elo: true,
+                    username: true,
+                    user: {
+                        select: { username: true }
+                    },
                     matchesAsPlayer1: {
                         where: {
-                            winner: { not: null }
+                            winnerRankedId: { not: null }
                         },
                         select: {
-                            winner: true
+                            winnerRankedId: true
                         }
                     },
                     matchesAsPlayer2: {
                         where: {
-                            winner: { not: null }
+                            winnerRankedId: { not: null }
                         },
                         select: {
-                            winner: true
+                            winnerRankedId: true
                         }
                     }
                 },
@@ -63,23 +66,23 @@ export const leaderboardRoutes: FastifyPluginAsync = async (app) => {
             });
 
             // Calculate win counts
-            const leaderboard = users.map(user => {
-                const winsAsPlayer1 = user.matchesAsPlayer1.filter(match => match.winner === user.id).length;
-                const winsAsPlayer2 = user.matchesAsPlayer2.filter(match => match.winner === user.id).length;
+            const leaderboard = rankedPlayers.map(player => {
+                const winsAsPlayer1 = player.matchesAsPlayer1.filter(m => m.winnerRankedId === player.id).length;
+                const winsAsPlayer2 = player.matchesAsPlayer2.filter(m => m.winnerRankedId === player.id).length;
 
                 return {
-                    id: user.id,
-                    username: user.username,
-                    elo: user.elo,
+                    id: player.id,
+                    username: player.user?.username || player.username || "",
+                    elo: player.elo,
                     winsAsPlayer1,
                     winsAsPlayer2,
                     totalWins: winsAsPlayer1 + winsAsPlayer2,
-                    totalMatches: user.matchesAsPlayer1.length + user.matchesAsPlayer2.length
+                    totalMatches: player.matchesAsPlayer1.length + player.matchesAsPlayer2.length
                 };
             });
 
             // Get total count for pagination metadata
-            const totalPlayers = await prisma.user.count({
+            const totalPlayers = await prisma.rankedUserInfo.count({
                 where: {
                     OR: [
                         { matchesAsPlayer1: { some: {} } },

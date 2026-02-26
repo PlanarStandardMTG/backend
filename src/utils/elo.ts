@@ -57,10 +57,10 @@ export function calculateEloChange(
  * @returns Number of matches won by the user
  */
 export function calculateMatchWins(
-  matches: Array<{ winner: string | null; player1Id: string; player2Id: string }>,
-  userId: string
+  matches: Array<{ winnerRankedId: string | null; player1RankedId: string; player2RankedId: string }>,
+  rankedId: string
 ): number {
-  return matches.filter((match) => match.winner === userId).length;
+  return matches.filter((match) => match.winnerRankedId === rankedId).length;
 }
 
 /**

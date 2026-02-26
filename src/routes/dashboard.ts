@@ -1,18 +1,9 @@
 import { type FastifyInstance } from "fastify";
 import { prisma } from "../plugins/prisma.js";
 import { userPublicSelect, userPrivateSelect } from "../utils/prismaSelects.js";
-import { validatePagination, isValidUUID } from "../utils/validation.js";
+import { isValidUUID } from "../utils/validation.js";
 
-interface LeaderboardEntry {
-  rank: number;
-  id: string;
-  username: string;
-  elo: number;
-  totalMatches: number;
-  wins: number;
-  losses: number;
-  winRate: number;
-}
+// NOTE: leaderboard endpoint was removed; use /api/leaderboard instead
 
 interface UserStats {
   id: string;
@@ -37,85 +28,9 @@ interface UserStats {
 }
 
 export async function dashboardRoutes(app: FastifyInstance) {
-  // Get global leaderboard
-  app.get<{ Querystring: { limit?: string; offset?: string } }>(
-    "/leaderboard",
-    {
-      onRequest: [app.authenticate],
-    },
-    async (request, reply) => {
-      try {
-        const pagination = validatePagination(
-          request.query.limit || "100",
-          request.query.offset
-        );
+  // (Leaderboard endpoint removed; clients should call /api/leaderboard)
 
-        if (!pagination.valid) {
-          return reply.status(400).send({
-            error: "Validation error",
-            message: pagination.error
-          });
-        }
-
-        // Cap leaderboard at 500 entries max for performance
-        const limit = Math.min(pagination.limit, 500);
-
-        // Get all users with match statistics
-        const users = await prisma.user.findMany({
-          select: {
-            id: true,
-            username: true,
-            elo: true,
-            matchesAsPlayer1: true,
-            matchesAsPlayer2: true,
-          },
-          orderBy: { elo: "desc" },
-          take: limit,
-          skip: pagination.offset,
-        });
-
-        const leaderboard: LeaderboardEntry[] = users.map((user: any, index: number) => {
-          // Count matches
-          const matchesAsPlayer1 = user.matchesAsPlayer1.filter(
-            (m: any) => m.completedAt !== null
-          );
-          const matchesAsPlayer2 = user.matchesAsPlayer2.filter(
-            (m: any) => m.completedAt !== null
-          );
-          const totalMatches = matchesAsPlayer1.length + matchesAsPlayer2.length;
-
-          // Count wins
-          const wins =
-            matchesAsPlayer1.filter((m: any) => m.winner === user.id).length +
-            matchesAsPlayer2.filter((m: any) => m.winner === user.id).length;
-
-          const losses = totalMatches - wins;
-          const winRate = totalMatches > 0 ? (wins / totalMatches) * 100 : 0;
-
-          return {
-            rank: pagination.offset + index + 1,
-            id: user.id,
-            username: user.username,
-            elo: user.elo,
-            totalMatches,
-            wins,
-            losses,
-            winRate: Math.round(winRate * 100) / 100,
-          };
-        });
-
-        return reply.send(leaderboard);
-      } catch (error) {
-        console.error("Error fetching leaderboard:", error);
-        return reply.status(500).send({ 
-          error: "Internal server error",
-          message: "Failed to fetch leaderboard" 
-        });
-      }
-    }
-  );
-
-  // Get detailed user stats
+  // Get detailed user stats (by ID)
   app.get<{ Params: { userId: string } }>(
     "/stats/:userId",
     {
@@ -137,8 +52,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
           where: { id: userId },
           select: {
             ...userPrivateSelect,
-            matchesAsPlayer1: true,
-            matchesAsPlayer2: true,
+            rankedInfo: true,
           },
         });
 
@@ -149,55 +63,60 @@ export async function dashboardRoutes(app: FastifyInstance) {
           });
         }
 
-        // Process matches
-        const matchesAsPlayer1 = user.matchesAsPlayer1.filter(
-          (m: any) => m.completedAt !== null
-        );
-        const matchesAsPlayer2 = user.matchesAsPlayer2.filter(
-          (m: any) => m.completedAt !== null
-        );
+        const rankedId = user.rankedInfo?.id;
 
-        const totalMatches =
-          matchesAsPlayer1.length + matchesAsPlayer2.length;
-        const wins =
-          matchesAsPlayer1.filter((m: any) => m.winner === userId).length +
-          matchesAsPlayer2.filter((m: any) => m.winner === userId).length;
+        // fetch matches via ranked id; if the user has no ranked entry we simply return empty
+        const matches = await prisma.match.findMany({
+          where: rankedId
+            ? {
+                OR: [
+                  { player1RankedId: rankedId },
+                  { player2RankedId: rankedId },
+                ],
+              }
+            : {},
+        });
+
+        const completed = matches.filter((m: any) => m.completedAt !== null);
+        const totalMatches = completed.length;
+        const wins = completed.filter((m: any) => m.winnerRankedId === rankedId).length;
         const losses = totalMatches - wins;
         const winRate = totalMatches > 0 ? (wins / totalMatches) * 100 : 0;
 
-        // Get recent matches (last 10)
-        const allMatches = [
-          ...matchesAsPlayer1.map((m: any) => ({
-            ...m,
-            isPlayer1: true,
-          })),
-          ...matchesAsPlayer2.map((m: any) => ({
-            ...m,
-            isPlayer1: false,
-          })),
-        ].sort(
+        const sorted = [...completed].sort(
           (a: any, b: any) =>
             (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0)
         );
 
         const recentMatches = await Promise.all(
-          allMatches.slice(0, 10).map(async (match: any) => {
-            const opponentId = match.isPlayer1
-              ? match.player2Id
-              : match.player1Id;
-            const opponent = await prisma.user.findUnique({
-              where: { id: opponentId },
-              select: userPublicSelect,
-            });
+          sorted.slice(0, 10).map(async (match: any) => {
+            // determine if current user is player1 for this match (ranked only)
+            const isPlayer1 = match.player1RankedId === rankedId;
 
-            const isWin = match.winner === userId;
-            const eloChange = match.isPlayer1
-              ? match.player1EloChange || 0
-              : match.player2EloChange || 0;
+            let opponentInfo: any = { id: "", username: "", elo: 0 };
+            const opponentRankedId = isPlayer1
+              ? match.player2RankedId
+              : match.player1RankedId;
+            if (opponentRankedId) {
+              const opponent = await prisma.rankedUserInfo.findUnique({
+                where: { id: opponentRankedId },
+                include: { user: { select: userPublicSelect } },
+              });
+              if (opponent) {
+                opponentInfo = {
+                  id: opponent.id,
+                  username: opponent.user?.username || opponent.username || "",
+                  elo: opponent.elo,
+                };
+              }
+            }
+
+            const isWin = match.winnerRankedId === rankedId;
+            const eloChange = isPlayer1 ? match.player1EloChange || 0 : match.player2EloChange || 0;
 
             return {
               id: match.id,
-              opponent: opponent!,
+              opponent: opponentInfo,
               result: (isWin ? "win" : "loss") as "win" | "loss",
               eloChange,
               completedAt: match.completedAt,
@@ -209,7 +128,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
           id: user.id,
           username: user.username,
           email: user.email,
-          elo: user.elo,
+          elo: user.rankedInfo?.elo ?? 1600,
           totalMatches,
           wins,
           losses,
@@ -242,8 +161,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
           where: { id: userId },
           select: {
             ...userPrivateSelect,
-            matchesAsPlayer1: true,
-            matchesAsPlayer2: true,
+            rankedInfo: true,
           },
         });
 
@@ -254,55 +172,58 @@ export async function dashboardRoutes(app: FastifyInstance) {
           });
         }
 
-        // Process matches
-        const matchesAsPlayer1 = user.matchesAsPlayer1.filter(
-          (m: any) => m.completedAt !== null
-        );
-        const matchesAsPlayer2 = user.matchesAsPlayer2.filter(
-          (m: any) => m.completedAt !== null
-        );
+        const rankedId = user.rankedInfo?.id;
 
-        const totalMatches =
-          matchesAsPlayer1.length + matchesAsPlayer2.length;
-        const wins =
-          matchesAsPlayer1.filter((m: any) => m.winner === userId).length +
-          matchesAsPlayer2.filter((m: any) => m.winner === userId).length;
+        const matches = await prisma.match.findMany({
+          where: rankedId
+            ? {
+                OR: [
+                  { player1RankedId: rankedId },
+                  { player2RankedId: rankedId },
+                ],
+              }
+            : {},
+        });
+
+        const completed = matches.filter((m: any) => m.completedAt !== null);
+        const totalMatches = completed.length;
+        const wins = completed.filter((m: any) => m.winnerRankedId === rankedId).length;
         const losses = totalMatches - wins;
         const winRate = totalMatches > 0 ? (wins / totalMatches) * 100 : 0;
 
-        // Get recent matches (last 10)
-        const allMatches = [
-          ...matchesAsPlayer1.map((m: any) => ({
-            ...m,
-            isPlayer1: true,
-          })),
-          ...matchesAsPlayer2.map((m: any) => ({
-            ...m,
-            isPlayer1: false,
-          })),
-        ].sort(
+        const sorted = [...completed].sort(
           (a: any, b: any) =>
             (b.completedAt?.getTime() || 0) - (a.completedAt?.getTime() || 0)
         );
 
         const recentMatches = await Promise.all(
-          allMatches.slice(0, 10).map(async (match: any) => {
-            const opponentId = match.isPlayer1
-              ? match.player2Id
-              : match.player1Id;
-            const opponent = await prisma.user.findUnique({
-              where: { id: opponentId },
-              select: userPublicSelect,
-            });
+          sorted.slice(0, 10).map(async (match: any) => {
+            const isPlayer1 = match.player1RankedId === rankedId;
 
-            const isWin = match.winner === userId;
-            const eloChange = match.isPlayer1
-              ? match.player1EloChange || 0
-              : match.player2EloChange || 0;
+            let opponentInfo: any = { id: "", username: "", elo: 0 };
+            const opponentRankedId = isPlayer1
+              ? match.player2RankedId
+              : match.player1RankedId;
+            if (opponentRankedId) {
+              const opponent = await prisma.rankedUserInfo.findUnique({
+                where: { id: opponentRankedId },
+                include: { user: { select: userPublicSelect } },
+              });
+              if (opponent) {
+                opponentInfo = {
+                  id: opponent.id,
+                  username: opponent.user?.username || opponent.username || "",
+                  elo: opponent.elo,
+                };
+              }
+            }
+
+            const isWin = match.winnerRankedId === rankedId;
+            const eloChange = isPlayer1 ? match.player1EloChange || 0 : match.player2EloChange || 0;
 
             return {
               id: match.id,
-              opponent: opponent!,
+              opponent: opponentInfo,
               result: (isWin ? "win" : "loss") as "win" | "loss",
               eloChange,
               completedAt: match.completedAt,
@@ -314,7 +235,7 @@ export async function dashboardRoutes(app: FastifyInstance) {
           id: user.id,
           username: user.username,
           email: user.email,
-          elo: user.elo,
+          elo: user.rankedInfo?.elo ?? 1600,
           totalMatches,
           wins,
           losses,
@@ -342,18 +263,28 @@ export async function dashboardRoutes(app: FastifyInstance) {
     async (request, reply) => {
       try {
         const userId = request.user.sub;
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { rankedInfo: true },
+        });
+        const rankedId = user?.rankedInfo?.id;
 
         const activeMatches = await prisma.match.findMany({
           where: {
-            OR: [{ player1Id: userId }, { player2Id: userId }],
+            OR: rankedId
+              ? [
+                  { player1RankedId: rankedId },
+                  { player2RankedId: rankedId },
+                ]
+              : [],
             completedAt: null,
           },
           include: {
-            player1: {
-              select: userPublicSelect,
+            player1Ranked: {
+              include: { user: { select: userPublicSelect } }
             },
-            player2: {
-              select: userPublicSelect,
+            player2Ranked: {
+              include: { user: { select: userPublicSelect } }
             },
           },
           orderBy: { createdAt: "desc" },
@@ -381,17 +312,28 @@ export async function dashboardRoutes(app: FastifyInstance) {
         const limit = Math.min(parseInt(request.query.limit || "50"), 500);
         const offset = parseInt(request.query.offset || "0");
 
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { rankedInfo: true },
+        });
+        const rankedId = user?.rankedInfo?.id;
+
         const matchHistory = await prisma.match.findMany({
           where: {
-            OR: [{ player1Id: userId }, { player2Id: userId }],
+            OR: rankedId
+              ? [
+                  { player1RankedId: rankedId },
+                  { player2RankedId: rankedId },
+                ]
+              : [],
             completedAt: { not: null },
           },
           include: {
-            player1: {
-              select: userPublicSelect,
+            player1Ranked: {
+              include: { user: { select: userPublicSelect } }
             },
-            player2: {
-              select: userPublicSelect,
+            player2Ranked: {
+              include: { user: { select: userPublicSelect } }
             },
           },
           orderBy: { completedAt: "desc" },

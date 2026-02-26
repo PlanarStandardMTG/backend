@@ -31,12 +31,33 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
   ```
 - **Response:** User object with JWT token
 
+## User Endpoints (`/api/users`)
+
+### Get Current User
+- **Endpoint:** `GET /api/users/me`
+- **Protection:** Protected (requires authentication)
+- **Description:** Retrieve the profile of the authenticated user, including current ELO (merged from rankedInfo)
+- **Response:** User object with `id`, `username`, `email`, `elo`, `rankedInfo`, etc.
+
+### Lookup User by ID
+- **Endpoint:** `GET /api/users/:id`
+- **Protection:** Protected (requires authentication)
+- **Description:** Given a user ID, return the username along with their `rankedInfo` ID and current ELO. Useful for resolving opponents in client applications.
+- **Response:**
+  ```json
+  {
+    "username": "playerName",
+    "rankedInfoId": "ranked_info_id_or_null",
+    "elo": 1600
+  }
+  ```
+
 ## Match Endpoints (`/api/matches`)
 
 ### Get All Matches
 - **Endpoint:** `GET /api/matches`
 - **Protection:** Protected (requires admin privileges)
-- **Description:** Get all matches in the system with pagination
+- **Description:** Get all matches in the system with pagination. Matches reference `RankedUserInfo` records (not raw user IDs).
 - **Query Parameters:**
   - `limit` (number, default: 10, max: 100) - Number of matches to return
   - `offset` (number, default: 0) - Pagination offset
@@ -46,15 +67,15 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
     "matches": [
       {
         "id": "match_id",
-        "player1Id": "user_id_1",
-        "player2Id": "user_id_2",
-        "winner": "user_id_1",
+        "player1RankedId": "ranked_id_1",
+        "player2RankedId": "ranked_id_2",
+        "winnerRankedId": "ranked_id_1",
         "player1EloChange": 16,
         "player2EloChange": -16,
         "createdAt": "2026-01-20T...",
         "completedAt": "2026-01-20T...",
-        "player1": { "id": "...", "username": "...", "elo": 1616 },
-        "player2": { "id": "...", "username": "...", "elo": 1584 }
+        "player1Ranked": { "id": "...", "username": "...", "elo": 1616 },
+        "player2Ranked": { "id": "...", "username": "...", "elo": 1584 }
       }
     ],
     "pagination": {
@@ -69,7 +90,7 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
 ### Create Match
 - **Endpoint:** `POST /api/matches`
 - **Protection:** Protected (requires admin privileges)
-- **Description:** Create a new match between two players
+- **Description:** Create a new ranked match between two users. User IDs are accepted in the request; the server will resolve (or create) corresponding `RankedUserInfo` records.
 - **Request Body:**
   ```json
   {
@@ -78,34 +99,34 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
   }
   ```
 - **Validations:**
-  - Both players must exist
-  - Cannot create match with self
-- **Response:** Match object with player details
+  - Both users must exist
+  - Cannot create match against yourself
+- **Response:** Match object including linked ranked player info
 
 ### Complete Match
 - **Endpoint:** `POST /api/matches/:matchId/complete`
 - **Protection:** Protected (requires admin privileges)
-- **Description:** Complete a match, record winner, and update ELO ratings
+- **Description:** Complete a match, record the winner (use a ranked ID) and update ELO ratings
 - **Request Body:**
   ```json
   {
-    "winnerId": "user_id"
+    "winnerId": "ranked_id_of_winner"
   }
   ```
 - **Validations:**
-  - Winner must be either player1 or player2
+  - Winner must correspond to one of the match's ranked players
 - **Response:** Updated match with ELO changes for both players
 
 ### Get Match Details
 - **Endpoint:** `GET /api/matches/:matchId`
 - **Protection:** Protected (requires authentication)
-- **Description:** Fetch details of a specific match
-- **Response:** Match object with player information
+- **Description:** Fetch details of a specific match (ranked players)
+- **Response:** Match object with ranked player information
 
 ### Get User Matches
 - **Endpoint:** `GET /api/matches/user/:userId`
 - **Protection:** Protected (requires authentication)
-- **Description:** Get all matches for a specific user with pagination
+- **Description:** Get all matches associated with a user (resolved via their `RankedUserInfo`) with pagination
 - **Query Parameters:**
   - `limit` (number, default: 10, max: 100) - Number of matches to return
   - `offset` (number, default: 0) - Pagination offset
@@ -115,15 +136,15 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
     "matches": [
       {
         "id": "match_id",
-        "player1Id": "user_id_1",
-        "player2Id": "user_id_2",
-        "winner": "user_id_1",
+        "player1RankedId": "ranked_id_1",
+        "player2RankedId": "ranked_id_2",
+        "winnerRankedId": "ranked_id_1",
         "player1EloChange": 16,
         "player2EloChange": -16,
         "createdAt": "2026-01-20T...",
         "completedAt": "2026-01-20T...",
-        "player1": { "id": "...", "username": "...", "elo": 1616 },
-        "player2": { "id": "...", "username": "...", "elo": 1584 }
+        "player1Ranked": { "id": "...", "username": "...", "elo": 1616 },
+        "player2Ranked": { "id": "...", "username": "...", "elo": 1584 }
       }
     ],
     "pagination": {
@@ -137,10 +158,7 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
 
 ## Dashboard Endpoints (`/api/dashboard`)
 
-### Global Leaderboard
-- **Endpoint:** `GET /api/dashboard/leaderboard`
-- **Protection:** Protected (requires authentication)
-- **Description:** Get ranked list of all players by ELO
+<!-- dashboard leaderboard removed; use /api/leaderboard instead -->
 - **Query Parameters:**
   - `limit` (number, default: 10) - Number of players to return
   - `offset` (number, default: 0) - Pagination offset
@@ -471,7 +489,7 @@ Matches:
   GET    /api/matches/user/:userId       - Get user matches (protected)
 
 Dashboard:
-  GET    /api/dashboard/leaderboard              - Global leaderboard (protected)
+  <!-- leaderboard endpoint removed, see /api/leaderboard -->
   GET    /api/dashboard/stats/me                 - Current user stats (protected)
   GET    /api/dashboard/stats/:userId            - Specific user stats (protected)
   GET    /api/dashboard/matches/active           - Active matches (protected)
@@ -495,3 +513,14 @@ Challonge:
   POST   /api/challonge/tournaments/:id/join     - Join tournament (protected, requires connection)
   DELETE /api/challonge/tournaments/:id/leave    - Leave tournament (protected, requires connection)
 ```
+## Admin Endpoints
+
+### Sync Tournament Matches
+- **Endpoint:** POST /api/admin/tournaments/sync-matches
+- **Protection:** Protected (admin only)
+- **Description:** Finds all tournaments whose 
+atingsUpdated flag is false, fetches match data from Challonge in start-date order, creates corresponding matches in the database (only when both participants have claimed accounts), and marks the tournament as processed. Also creates  unclaimed ChallongeConnection records for any participants without an existing connection.
+- **Response:**
+  `json
+  { \success\: true, \processed\: 3 }
+  `

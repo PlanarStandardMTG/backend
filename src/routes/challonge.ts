@@ -1,10 +1,12 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { prisma } from '../plugins/prisma.js';
+import { getOrCreateRankedForUsername } from '../utils/ranked.js';
+import { AuthenticatedRequest } from '../utils/auth.js';
 
-const CHALLONGE_API_BASE = 'https://api.challonge.com/v2.1/communities/planarstandardmtg';
+export const CHALLONGE_API_BASE = 'https://api.challonge.com/v2.1/communities/planarstandardmtg';
 
 // Challonge OAuth Configuration
-const CHALLONGE_CONFIG = {
+export const CHALLONGE_CONFIG = {
   clientId: process.env.CHALLONGE_CLIENT_ID || 'YOUR_CHALLONGE_CLIENT_ID',
   clientSecret: process.env.CHALLONGE_CLIENT_SECRET || 'YOUR_CHALLONGE_CLIENT_SECRET',
   apiKey: process.env.CHALLONGE_API_KEY || 'YOUR_CHALLONGE_API_KEY',
@@ -55,14 +57,55 @@ function invalidateParticipantsCache(tournamentId: string): void {
   participantsCache.delete(tournamentId);
 }
 
-interface AuthenticatedRequest extends FastifyRequest {
-  user: {
-    sub: string;
-    email: string;
-    admin: boolean;
-    tournamentOrganizer: boolean;
-    blogger: boolean;
-  };
+// Helper function to fetch tournament participants (with caching)
+export async function fetchTournamentParticipants(tournamentId: string): Promise<ParticipantCacheEntry['data'] | null> {
+  // Check cache first
+  const cached = getCachedParticipants(tournamentId);
+  if (cached) {
+    return cached;
+  }
+
+  // Fetch from API
+  try {
+    const participantsResponse = await fetch(
+      `${CHALLONGE_API_BASE}/tournaments/${tournamentId}/participants.json`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization-Type': 'v1',
+          'Authorization': CHALLONGE_CONFIG.apiKey,
+          'Content-Type': 'application/vnd.api+json',
+          'Accept': 'application/json',
+        },
+      }
+    );
+
+    if (!participantsResponse.ok) {
+      return null;
+    }
+
+    const participantsData = await participantsResponse.json() as {
+      data: ParticipantCacheEntry['data'];
+    };
+
+    // Cache the result
+    setCachedParticipants(tournamentId, participantsData.data);
+
+    return participantsData.data;
+  } catch (error) {
+    console.error('Error fetching participants:', error);
+    return null;
+  }
+}
+
+// Helper to resolve the user's ChallongeConnection via their RankedUserInfo record
+async function getConnectionForUser(userId: string) {
+  const ranked = await prisma.rankedUserInfo.findUnique({
+    where: { userId },
+    select: { connectionId: true },
+  });
+  if (!ranked?.connectionId) return null;
+  return prisma.challongeConnection.findUnique({ where: { id: ranked.connectionId } });
 }
 
 export default async function challongeRoutes(app: FastifyInstance) {
@@ -147,7 +190,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
         const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
 
         // Fetch user's Challonge username
-        let challongeUsername: string | undefined;
+        let challongeUsername: string;
         console.log('Attempting to fetch Challonge username...');
         console.log('Access token (first 20 chars):', tokenData.access_token.substring(0, 20));
         
@@ -168,7 +211,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
             const meData = await meResponse.json() as {
               data: {
                 attributes: {
-                  username?: string;
+                  username: string;
                 };
               };
             };
@@ -178,9 +221,11 @@ export default async function challongeRoutes(app: FastifyInstance) {
           } else {
             const errorText = await meResponse.text();
             console.error('Challonge /me.json failed. Status:', meResponse.status, 'Error:', errorText);
+            return reply.status(500).send({ error: 'Failed to fetch Challonge username' });
           }
         } catch (error) {
           console.error('Exception while fetching Challonge username:', error);
+          return reply.status(500).send({ error: 'Failed to fetch Challonge username' });
         }
         
         console.log('Final challongeUsername to save:', challongeUsername);
@@ -199,24 +244,68 @@ export default async function challongeRoutes(app: FastifyInstance) {
         }
 
         // Store or update the connection
-        const connection = await prisma.challongeConnection.upsert({
-          where: { userId: request.user.sub },
+        let connection: any = null;
+        if (challongeUsername) {
+          connection = await prisma.challongeConnection.findFirst({
+            where: {
+              challongeUsername
+            },
+          });
+        }
+
+        connection = await prisma.challongeConnection.upsert({
+          where: { challongeUsername },
           create: {
-            userId: request.user.sub,
+            challongeUsername,
             accessToken: tokenData.access_token,
             refreshToken: tokenData.refresh_token,
             expiresAt,
             scope: tokenData.scope || CHALLONGE_CONFIG.scope,
-            challongeUsername,
           },
           update: {
             accessToken: tokenData.access_token,
             refreshToken: tokenData.refresh_token,
             expiresAt,
             scope: tokenData.scope || CHALLONGE_CONFIG.scope,
-            challongeUsername,
           },
         });
+
+        // ensure ranked info entry exists
+        if (connection.challongeUsername) {
+          // if a ranked entry already exists for this username but isn't linked to this connection, link it
+          let ranked = await prisma.rankedUserInfo.findUnique({
+            where: { username: challongeUsername },
+          });
+
+          if (ranked) {
+            if (ranked.connectionId !== connection.id) {
+              ranked = await prisma.rankedUserInfo.update({
+                where: { id: ranked.id },
+                data: { connectionId: connection.id, username: connection.challongeUsername },
+              });
+            }
+          } else {
+            // create or fetch based on username
+            ranked = await getOrCreateRankedForUsername(connection.challongeUsername, connection.id);
+            ranked = await prisma.rankedUserInfo.update({
+              where: { id: ranked.id },
+              data: { userId: request.user.sub },
+            });
+          }
+
+          // link back to user record for convenience
+          await prisma.user.update({
+            where: { id: request.user.sub },
+            data: { rankedInfoId: ranked.id },
+          });
+
+          if (connection.rankedInfoId !== ranked.id) {
+            await prisma.challongeConnection.update({
+              where: { id: connection.id },
+              data: { rankedInfoId: ranked.id },
+            });
+          }
+        }
 
         return reply.send({
           success: true,
@@ -235,32 +324,20 @@ export default async function challongeRoutes(app: FastifyInstance) {
     onRequest: [app.authenticate],
     handler: async (request: AuthenticatedRequest, reply) => {
       try {
-        const connection = await prisma.challongeConnection.findUnique({
-          where: { userId: request.user.sub },
-          select: {
-            id: true,
-            expiresAt: true,
-            scope: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        });
-
-        if (!connection) {
+        const connection = await getConnectionForUser(request.user.sub);
+        if (connection) {
+          // trim to only publicly exposed fields
+          const { id, expiresAt, scope, createdAt, updatedAt } = connection;
+          // return similar shape
           return reply.send({
-            connected: false,
+            connected: true,
+            expiresAt,
+            isExpired: expiresAt ? new Date() >= expiresAt : true,
+            scope,
+            connectedSince: createdAt,
           });
         }
-
-        const isExpired = new Date() >= connection.expiresAt;
-
-        return reply.send({
-          connected: true,
-          expiresAt: connection.expiresAt,
-          isExpired,
-          scope: connection.scope,
-          connectedSince: connection.createdAt,
-        });
+        return reply.send({ connected: false });
       } catch (error) {
         console.error('Error checking Challonge status:', error);
         return reply.status(500).send({ error: 'Failed to check connection status' });
@@ -273,9 +350,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
     onRequest: [app.authenticate],
     handler: async (request: AuthenticatedRequest, reply) => {
       try {
-        const connection = await prisma.challongeConnection.findUnique({
-          where: { userId: request.user.sub },
-        });
+        const connection = await getConnectionForUser(request.user.sub);
 
         if (!connection) {
           return reply.status(404).send({ error: 'No Challonge connection found' });
@@ -289,7 +364,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
           },
           body: new URLSearchParams({
             grant_type: 'refresh_token',
-            refresh_token: connection.refreshToken,
+            refresh_token: connection.refreshToken ?? '',
             client_id: CHALLONGE_CONFIG.clientId,
             client_secret: CHALLONGE_CONFIG.clientSecret,
           }),
@@ -312,7 +387,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
 
         // Update the connection with new tokens
         const updatedConnection = await prisma.challongeConnection.update({
-          where: { userId: request.user.sub },
+          where: { id: connection.id },
           data: {
             accessToken: tokenData.access_token,
             // Some OAuth providers rotate refresh tokens, some don't
@@ -344,9 +419,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
     onRequest: [app.authenticate],
     handler: async (request: AuthenticatedRequest, reply) => {
       try {
-        const connection = await prisma.challongeConnection.findUnique({
-          where: { userId: request.user.sub },
-        });
+        const connection = await getConnectionForUser(request.user.sub);
 
         if (!connection) {
           return reply.status(404).send({ error: 'No Challonge connection found' });
@@ -361,7 +434,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
               'Content-Type': 'application/x-www-form-urlencoded',
             },
             body: new URLSearchParams({
-              token: connection.accessToken,
+              token: connection.accessToken ?? '',
               client_id: CHALLONGE_CONFIG.clientId,
               client_secret: CHALLONGE_CONFIG.clientSecret,
             }),
@@ -373,7 +446,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
 
         // Delete the connection from our database
         await prisma.challongeConnection.delete({
-          where: { userId: request.user.sub },
+          where: { id: connection.id },
         });
 
         return reply.send({
@@ -392,9 +465,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
     onRequest: [app.authenticate],
     handler: async (request: AuthenticatedRequest, reply) => {
       try {
-        let connection = await prisma.challongeConnection.findUnique({
-          where: { userId: request.user.sub },
-        });
+        let connection = await getConnectionForUser(request.user.sub);
 
         if (!connection) {
           return reply.status(404).send({ error: 'No Challonge connection found' });
@@ -403,7 +474,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
         // Check if token is expired or will expire in the next 5 minutes
         const expiryThreshold = new Date(Date.now() + 5 * 60 * 1000);
         
-        if (connection.expiresAt <= expiryThreshold) {
+        if (connection.expiresAt && connection.expiresAt <= expiryThreshold) {
           // Token expired or about to expire - refresh it
           const tokenResponse = await fetch(CHALLONGE_CONFIG.tokenUrl, {
             method: 'POST',
@@ -412,7 +483,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
             },
             body: new URLSearchParams({
               grant_type: 'refresh_token',
-              refresh_token: connection.refreshToken,
+              refresh_token: connection.refreshToken ?? '',
               client_id: CHALLONGE_CONFIG.clientId,
               client_secret: CHALLONGE_CONFIG.clientSecret,
             }),
@@ -428,7 +499,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
             const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
 
             connection = await prisma.challongeConnection.update({
-              where: { userId: request.user.sub },
+              where: { id: connection.id },
               data: {
                 accessToken: tokenData.access_token,
                 ...(tokenData.refresh_token && { refreshToken: tokenData.refresh_token }),
@@ -455,10 +526,8 @@ export default async function challongeRoutes(app: FastifyInstance) {
 
   // Helper function to get a valid access token (auto-refresh if needed)
   async function getValidAccessToken(userId: string): Promise<string | null> {
-    let connection = await prisma.challongeConnection.findUnique({
-      where: { userId },
-    });
-
+    // resolve connection through ranked info
+    let connection = await getConnectionForUser(userId);
     if (!connection) {
       return null;
     }
@@ -466,7 +535,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
     // Check if token is expired or will expire in the next 5 minutes
     const expiryThreshold = new Date(Date.now() + 5 * 60 * 1000);
     
-    if (connection.expiresAt <= expiryThreshold) {
+    if (connection.expiresAt && connection.expiresAt <= expiryThreshold) {
       // Token expired or about to expire - refresh it
       try {
         const tokenResponse = await fetch(CHALLONGE_CONFIG.tokenUrl, {
@@ -476,7 +545,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
           },
           body: new URLSearchParams({
             grant_type: 'refresh_token',
-            refresh_token: connection.refreshToken,
+            refresh_token: connection.refreshToken ?? '',
             client_id: CHALLONGE_CONFIG.clientId,
             client_secret: CHALLONGE_CONFIG.clientSecret,
           }),
@@ -492,7 +561,7 @@ export default async function challongeRoutes(app: FastifyInstance) {
           const expiresAt = new Date(Date.now() + tokenData.expires_in * 1000);
 
           connection = await prisma.challongeConnection.update({
-            where: { userId },
+            where: { id: connection.id },
             data: {
               accessToken: tokenData.access_token,
               ...(tokenData.refresh_token && { refreshToken: tokenData.refresh_token }),
@@ -508,46 +577,6 @@ export default async function challongeRoutes(app: FastifyInstance) {
     return connection.accessToken;
   }
 
-  // Helper function to fetch tournament participants (with caching)
-  async function fetchTournamentParticipants(tournamentId: string): Promise<ParticipantCacheEntry['data'] | null> {
-    // Check cache first
-    const cached = getCachedParticipants(tournamentId);
-    if (cached) {
-      return cached;
-    }
-
-    // Fetch from API
-    try {
-      const participantsResponse = await fetch(
-        `${CHALLONGE_API_BASE}/tournaments/${tournamentId}/participants.json`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization-Type': 'v1',
-            'Authorization': CHALLONGE_CONFIG.apiKey,
-            'Content-Type': 'application/vnd.api+json',
-            'Accept': 'application/json',
-          },
-        }
-      );
-
-      if (!participantsResponse.ok) {
-        return null;
-      }
-
-      const participantsData = await participantsResponse.json() as {
-        data: ParticipantCacheEntry['data'];
-      };
-
-      // Cache the result
-      setCachedParticipants(tournamentId, participantsData.data);
-
-      return participantsData.data;
-    } catch (error) {
-      console.error('Error fetching participants:', error);
-      return null;
-    }
-  }
 
   // Get all tournaments associated with the app (using API key)
   app.get('/tournaments', {
@@ -599,7 +628,6 @@ export default async function challongeRoutes(app: FastifyInstance) {
             .map(async (tournament) => {
               const tournamentData = {
                 challongeId: tournament.id,
-                userId: null,
                 name: tournament.attributes.name,
                 tournamentType: tournament.attributes.tournament_type,
                 url: tournament.attributes.url || null,
@@ -632,10 +660,8 @@ export default async function challongeRoutes(app: FastifyInstance) {
               try {
                 await request.jwtVerify();
                 // Get user's Challonge connection to check participation
-                const userConnection = await prisma.challongeConnection.findUnique({
-                  where: { userId: request.user.sub },
-                  select: { challongeUsername: true },
-                });
+                const conn = await getConnectionForUser(request.user.sub);
+                const userConnection = conn ? { challongeUsername: conn.challongeUsername } : null;
 
                 // Check if user is a participant
                 console.log('User connection:', userConnection);
@@ -743,7 +769,6 @@ export default async function challongeRoutes(app: FastifyInstance) {
           where: { challongeId: tournament.id },
           create: {
             challongeId: tournament.id,
-            userId: null,
             name: tournament.attributes.name,
             tournamentType: tournament.attributes.tournament_type,
             url: tournament.attributes.url || null,
@@ -770,10 +795,8 @@ export default async function challongeRoutes(app: FastifyInstance) {
         let isParticipant = false;
         let userChallongeUsername: string | null = null;
 
-        const userConnection = await prisma.challongeConnection.findUnique({
-          where: { userId: request.user.sub },
-          select: { challongeUsername: true },
-        });
+        const conn = await getConnectionForUser(request.user.sub);
+        const userConnection = conn ? { challongeUsername: conn.challongeUsername } : null;
 
         if (userConnection?.challongeUsername) {
           try {
@@ -830,10 +853,8 @@ export default async function challongeRoutes(app: FastifyInstance) {
         const tournamentIdentifier = tournament.challongeId;
 
         // Check if user has connected their Challonge account
-        const userConnection = await prisma.challongeConnection.findUnique({
-          where: { userId: request.user.sub },
-          select: { challongeUsername: true },
-        });
+        const conn2 = await getConnectionForUser(request.user.sub);
+        const userConnection = conn2 ? { challongeUsername: conn2.challongeUsername } : null;
 
         if (!userConnection?.challongeUsername) {
           return reply.status(403).send({ 
@@ -954,10 +975,8 @@ export default async function challongeRoutes(app: FastifyInstance) {
         const tournamentIdentifier = tournament.challongeId;
 
         // Check if user has connected their Challonge account
-        const userConnection = await prisma.challongeConnection.findUnique({
-          where: { userId: request.user.sub },
-          select: { challongeUsername: true },
-        });
+        const conn3 = await getConnectionForUser(request.user.sub);
+        const userConnection = conn3 ? { challongeUsername: conn3.challongeUsername } : null;
 
         if (!userConnection?.challongeUsername) {
           return reply.status(403).send({ 

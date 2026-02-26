@@ -3,8 +3,11 @@ import { prisma } from "../plugins/prisma.js";
 import { calculateEloChange } from "../utils/elo.js";
 import { userPublicSelect } from "../utils/prismaSelects.js";
 import { isValidUUID, validatePagination } from "../utils/validation.js";
+import { getOrCreateRankedForUser } from "../utils/ranked.js";
 
 interface CreateMatchRequest {
+  // the IDs of the users to create a ranked match between; the system will resolve their
+  // associated RankedUserInfo records (creating them as needed)
   player1Id: string;
   player2Id: string;
 }
@@ -38,11 +41,11 @@ export async function matchRoutes(app: FastifyInstance) {
           prisma.match.count(),
           prisma.match.findMany({
             include: {
-              player1: {
-                select: userPublicSelect,
+              player1Ranked: {
+                include: { user: { select: userPublicSelect } }
               },
-              player2: {
-                select: userPublicSelect,
+              player2Ranked: {
+                include: { user: { select: userPublicSelect } }
               },
             },
             orderBy: {
@@ -113,7 +116,7 @@ export async function matchRoutes(app: FastifyInstance) {
           });
         }
 
-        // Validate that both players exist
+        // Ensure both users exist and fetch their ranked info
         const [player1, player2] = await Promise.all([
           prisma.user.findUnique({ where: { id: player1Id } }),
           prisma.user.findUnique({ where: { id: player2Id } }),
@@ -133,18 +136,21 @@ export async function matchRoutes(app: FastifyInstance) {
           });
         }
 
-        // Create the match
+        const ranked1 = await getOrCreateRankedForUser(player1Id);
+        const ranked2 = await getOrCreateRankedForUser(player2Id);
+
+        // Create the match using only ranked identifiers
         const match = await prisma.match.create({
           data: {
-            player1Id,
-            player2Id,
+            player1RankedId: ranked1.id,
+            player2RankedId: ranked2.id,
           },
           include: {
-            player1: {
-              select: userPublicSelect,
+            player1Ranked: {
+              include: { user: { select: userPublicSelect } }
             },
-            player2: {
-              select: userPublicSelect,
+            player2Ranked: {
+              include: { user: { select: userPublicSelect } }
             },
           },
         });
@@ -194,12 +200,16 @@ export async function matchRoutes(app: FastifyInstance) {
           });
         }
 
-        // Fetch the match
+        // Fetch the match including ranked players (and any linked user info)
         const match = await prisma.match.findUnique({
           where: { id: matchId },
           include: {
-            player1: true,
-            player2: true,
+            player1Ranked: {
+              include: { user: { select: userPublicSelect } }
+            },
+            player2Ranked: {
+              include: { user: { select: userPublicSelect } }
+            },
           },
         });
 
@@ -218,41 +228,46 @@ export async function matchRoutes(app: FastifyInstance) {
           });
         }
 
-        // Validate that winnerId is one of the players
-        if (winnerId !== match.player1Id && winnerId !== match.player2Id) {
+        // Determine which ranked id corresponds to winnerId
+        let player1Won: boolean;
+        const ranked1Id = match.player1RankedId;
+        const ranked2Id = match.player2RankedId;
+
+        if (winnerId === ranked1Id) {
+          player1Won = true;
+        } else if (winnerId === ranked2Id) {
+          player1Won = false;
+        } else {
           return reply.status(400).send({ 
             error: "Validation error",
-            message: "Winner must be one of the match players" 
+            message: "Winner must be one of the match players (provide a ranked ID)" 
           });
         }
 
-        // Determine who won
-        const player1Won = winnerId === match.player1Id;
-
-        // Calculate ELO changes
+        // Calculate ELO changes using ranked players' current elo
         const eloResult = calculateEloChange(
-          match.player1.elo,
-          match.player2.elo,
+          match.player1Ranked.elo,
+          match.player2Ranked.elo,
           player1Won
         );
 
-        // Update the match and player ELOs in a transaction
+        // Update the match and ranked ELOs
         await prisma.$transaction([
           prisma.match.update({
             where: { id: matchId },
             data: {
-              winner: winnerId,
+              winnerRankedId: player1Won ? ranked1Id : ranked2Id,
               player1EloChange: eloResult.player1Change,
               player2EloChange: eloResult.player2Change,
               completedAt: new Date(),
             },
           }),
-          prisma.user.update({
-            where: { id: match.player1Id },
+          prisma.rankedUserInfo.update({
+            where: { id: ranked1Id },
             data: { elo: eloResult.player1NewElo },
           }),
-          prisma.user.update({
-            where: { id: match.player2Id },
+          prisma.rankedUserInfo.update({
+            where: { id: ranked2Id },
             data: { elo: eloResult.player2NewElo },
           }),
         ]);
@@ -261,11 +276,11 @@ export async function matchRoutes(app: FastifyInstance) {
         const finalMatch = await prisma.match.findUnique({
           where: { id: matchId },
           include: {
-            player1: {
-              select: userPublicSelect,
+            player1Ranked: {
+              include: { user: { select: userPublicSelect } }
             },
-            player2: {
-              select: userPublicSelect,
+            player2Ranked: {
+              include: { user: { select: userPublicSelect } }
             },
           },
         });
@@ -306,11 +321,11 @@ export async function matchRoutes(app: FastifyInstance) {
         const match = await prisma.match.findUnique({
           where: { id: matchId },
           include: {
-            player1: {
-              select: userPublicSelect,
+            player1Ranked: {
+              include: { user: { select: userPublicSelect } }
             },
-            player2: {
-              select: userPublicSelect,
+            player2Ranked: {
+              include: { user: { select: userPublicSelect } }
             },
           },
         });
@@ -355,22 +370,39 @@ export async function matchRoutes(app: FastifyInstance) {
         }
 
         // Get total count and matches
+        // first resolve ranked entry for current user (if exists)
+        const ranked = await prisma.rankedUserInfo.findUnique({
+          where: { userId },
+          select: { id: true },
+        });
+        const rankedId = ranked?.id;
+
         const [total, matches] = await Promise.all([
           prisma.match.count({
-            where: {
-              OR: [{ player1Id: userId }, { player2Id: userId }],
-            },
+            where: rankedId
+              ? {
+                  OR: [
+                    { player1RankedId: rankedId },
+                    { player2RankedId: rankedId },
+                  ],
+                }
+              : undefined,
           }),
           prisma.match.findMany({
-            where: {
-              OR: [{ player1Id: userId }, { player2Id: userId }],
-            },
+            where: rankedId
+              ? {
+                  OR: [
+                    { player1RankedId: rankedId },
+                    { player2RankedId: rankedId },
+                  ],
+                }
+              : undefined,
             include: {
-              player1: {
-                select: userPublicSelect,
+              player1Ranked: {
+                include: { user: { select: userPublicSelect } }
               },
-              player2: {
-                select: userPublicSelect,
+              player2Ranked: {
+                include: { user: { select: userPublicSelect } }
               },
             },
             orderBy: {

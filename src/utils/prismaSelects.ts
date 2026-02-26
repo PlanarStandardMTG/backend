@@ -10,10 +10,14 @@
 export const userPublicSelect = {
   id: true,
   username: true,
-  elo: true,
   admin: true,
   tournamentOrganizer: true,
   blogger: true,
+  rankedInfo: {
+    select: {
+      elo: true
+    }
+  }
 } as const;
 
 /**
@@ -24,10 +28,14 @@ export const userPrivateSelect = {
   id: true,
   username: true,
   email: true,
-  elo: true,
   admin: true,
   tournamentOrganizer: true,
   blogger: true,
+  rankedInfo: {
+    select: {
+      elo: true
+    }
+  }
 } as const;
 
 /**
