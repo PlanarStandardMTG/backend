@@ -90,7 +90,7 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
 ### Create Match
 - **Endpoint:** `POST /api/matches`
 - **Protection:** Protected (requires admin privileges)
-- **Description:** Create a new ranked match between two users. User IDs are accepted in the request; the server will resolve (or create) corresponding `RankedUserInfo` records.
+- **Description:** Create a new ranked match between two users. User IDs are accepted in the request; the server will resolve (or create) corresponding `RankedUserInfo` records. Newly-created matches are never completed; use the complete endpoint to record results.
 - **Request Body:**
   ```json
   {
@@ -101,21 +101,44 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
 - **Validations:**
   - Both users must exist
   - Cannot create match against yourself
-- **Response:** Match object including linked ranked player info
+- **Response:** Match object including linked ranked player info. Response will include `draw: false`, `winnerRankedId: null`, and no scores.
 
 ### Complete Match
 - **Endpoint:** `POST /api/matches/:matchId/complete`
 - **Protection:** Protected (requires admin privileges)
-- **Description:** Complete a match, record the winner (use a ranked ID) and update ELO ratings
+- **Description:** Finalize a match by specifying the winner or marking it a draw. Scores may also be provided for record‑keeping. ELO ratings are updated accordingly.
 - **Request Body:**
   ```json
   {
-    "winnerId": "ranked_id_of_winner"
+    // one of the two fields below must be present
+    "winnerId": "ranked_id_of_winner",
+    "draw": true,
+
+    // optional numerical scores (e.g. 3-2)
+    "player1Score": 3,
+    "player2Score": 2
   }
   ```
 - **Validations:**
-  - Winner must correspond to one of the match's ranked players
-- **Response:** Updated match with ELO changes for both players
+  - Must specify exactly one of `winnerId` or `draw`
+  - Winner (if provided) must be a ranked ID belonging to one of the players
+- **Response:**
+  ```json
+  {
+    "match": {
+      "id": "...",
+      "player1RankedId": "...",
+      "player2RankedId": "...",
+      "winnerRankedId": "..." | null,
+      "draw": true | false,
+      "player1Score": 3 | null,
+      "player2Score": 2 | null,
+      ...
+    },
+    "player1EloChange": 16,
+    "player2EloChange": -16
+  }
+  ```
 
 ### Get Match Details
 - **Endpoint:** `GET /api/matches/:matchId`

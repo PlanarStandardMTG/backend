@@ -32,7 +32,12 @@ model Match {
   // only ranked-user relationships now
   player1RankedId  String
   player2RankedId  String
+
+  draw             Boolean   @default(false)
   winnerRankedId   String?
+
+  player1Score       Int?
+  player2Score       Int?
 
   tournamentId     String?  // optional link to a tournament
   

@@ -26,17 +26,37 @@ function getExpectedScore(playerElo: number, opponentElo: number): number {
  * @param player1Won - Whether player 1 won the match
  * @returns Object with new ELO ratings and changes for both players
  */
+export type MatchResult = "player1" | "player2" | "draw";
+
+/**
+ * Calculate new ELO ratings after a match.
+ * @param player1Elo - Current ELO rating of player 1
+ * @param player2Elo - Current ELO rating of player 2
+ * @param result - "player1" if player1 won, "player2" if player2 won, or "draw" for a tie
+ * @returns Object with new ELO ratings and changes for both players
+ */
 export function calculateEloChange(
   player1Elo: number,
   player2Elo: number,
-  player1Won: boolean
+  result: MatchResult
 ): EloChangeResult {
   const expected1 = getExpectedScore(player1Elo, player2Elo);
   const expected2 = getExpectedScore(player2Elo, player1Elo);
 
-  // Score: 1 for win, 0 for loss
-  const score1 = player1Won ? 1 : 0;
-  const score2 = player1Won ? 0 : 1;
+  // Score: 1 for win, 0 for loss, 0.5 for draw
+  let score1: number;
+  let score2: number;
+  if (result === "player1") {
+    score1 = 1;
+    score2 = 0;
+  } else if (result === "player2") {
+    score1 = 0;
+    score2 = 1;
+  } else {
+    // draw
+    score1 = 0.5;
+    score2 = 0.5;
+  }
 
   // Calculate rating changes
   const change1 = Math.round(K_FACTOR * (score1 - expected1));

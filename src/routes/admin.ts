@@ -121,7 +121,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request, reply) => {
       try {
         const tournaments = await prisma.tournament.findMany({
-          where: { ratingsUpdated: false },
+          where: { ratingsUpdated: false, state: "complete" },
           orderBy: { startsAt: "asc" },
         });
 
@@ -134,21 +134,15 @@ export async function adminRoutes(app: FastifyInstance) {
             continue;
           }
 
-          // Ensure there is a connection record for each participant (unclaimed if necessary)
+          // Ensure there is a ranked entry for each participant (unclaimed if necessary)
           for (const p of participants) {
             const username = p.attributes?.username;
             if (!username) continue;
             let existingConn = await prisma.challongeConnection.findUnique({
               where: { challongeUsername: username },
             });
-            if (!existingConn) {
-              existingConn = await prisma.challongeConnection.create({
-                data: { challongeUsername: username },
-              });
-            }
 
-            // also ensure a ranked entry exists for the participant
-            await getOrCreateRankedForUsername(username, existingConn.id);
+            await getOrCreateRankedForUsername(username, existingConn?.id);
           }
 
           // fetch matches from Challonge
@@ -173,22 +167,22 @@ export async function adminRoutes(app: FastifyInstance) {
           const matchesData = (await matchesRes.json()) as { data: Array<any> };
 
           for (const m of matchesData.data) {
-            const p1Id = m.relationships?.player1?.data?.id;
-            const p2Id = m.relationships?.player2?.data?.id;
+            const p1Id = m.attributes.points_by_participant?.[0].participant_id;
+            const p2Id = m.attributes.points_by_participant?.[1].participant_id;
             if (!p1Id || !p2Id) continue;
 
             const p1 = participants.find((pp: any) => pp.id.toString() === p1Id.toString());
             const p2 = participants.find((pp: any) => pp.id.toString() === p2Id.toString());
             if (!p1 || !p2) continue;
 
-            // resolve ranked info for each participant (using connection or username)
+            // resolve ranked info for each participant (based solely on username)
+            // connection lookups are unnecessary here; if a connection should be linked it
+            // was handled in the previous loop or via the OAuth flow.
             const r1 = p1.attributes?.username
-              ? await getOrCreateRankedForUsername(p1.attributes.username,
-                  (await prisma.challongeConnection.findUnique({ where: { challongeUsername: p1.attributes.username } }))?.id)
+              ? await getOrCreateRankedForUsername(p1.attributes.username)
               : null;
             const r2 = p2.attributes?.username
-              ? await getOrCreateRankedForUsername(p2.attributes.username,
-                  (await prisma.challongeConnection.findUnique({ where: { challongeUsername: p2.attributes.username } }))?.id)
+              ? await getOrCreateRankedForUsername(p2.attributes.username)
               : null;
 
             if (!r1 || !r2) continue; // can't process without ranked ids
@@ -196,7 +190,7 @@ export async function adminRoutes(app: FastifyInstance) {
             const ranked1Id = r1.id;
             const ranked2Id = r2.id;
 
-            // determine winner ranked id
+            // determine winner ranked id (null if draw)
             let winnerRankedId: string | null = null;
             const winnerParticipantId = m.attributes?.winner_id;
             if (winnerParticipantId) {
@@ -204,11 +198,19 @@ export async function adminRoutes(app: FastifyInstance) {
               else if (winnerParticipantId.toString() === p2Id.toString()) winnerRankedId = ranked2Id;
             }
 
+            // compute match result for Elo
+            const result: "player1" | "player2" | "draw" =
+              winnerRankedId === ranked1Id
+                ? "player1"
+                : winnerRankedId === ranked2Id
+                ? "player2"
+                : "draw";
+
             // calculate elo & persist match using ranked elo values
             const eloResult = calculateEloChange(
               r1.elo,
               r2.elo,
-              winnerRankedId === ranked1Id
+              result
             );
 
             await prisma.$transaction([
@@ -217,9 +219,10 @@ export async function adminRoutes(app: FastifyInstance) {
                   player1RankedId: ranked1Id,
                   player2RankedId: ranked2Id,
                   winnerRankedId,
+                  draw: result === "draw",
                   player1EloChange: eloResult.player1Change,
                   player2EloChange: eloResult.player2Change,
-                  completedAt: winnerRankedId ? new Date() : null,
+                  completedAt: winnerRankedId || result === "draw" ? new Date() : null,
                 },
               }),
               prisma.rankedUserInfo.update({

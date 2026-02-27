@@ -1,6 +1,6 @@
 import { type FastifyInstance } from "fastify";
 import { prisma } from "../plugins/prisma.js";
-import { calculateEloChange } from "../utils/elo.js";
+import { calculateEloChange, MatchResult } from "../utils/elo.js";
 import { userPublicSelect } from "../utils/prismaSelects.js";
 import { isValidUUID, validatePagination } from "../utils/validation.js";
 import { getOrCreateRankedForUser } from "../utils/ranked.js";
@@ -13,7 +13,10 @@ interface CreateMatchRequest {
 }
 
 interface CompleteMatchRequest {
-  winnerId: string;
+  winnerId?: string;          // ranked ID of winner
+  draw?: boolean;             // mark match as a draw
+  player1Score?: number;      // optional scores for record-keeping
+  player2Score?: number;
 }
 
 export async function matchRoutes(app: FastifyInstance) {
@@ -175,7 +178,7 @@ export async function matchRoutes(app: FastifyInstance) {
     async (request, reply) => {
       try {
         const { matchId } = request.params;
-        const { winnerId } = request.body;
+        const { winnerId, draw, player1Score, player2Score } = request.body;
 
         // Validate match ID format
         if (!isValidUUID(matchId)) {
@@ -185,18 +188,25 @@ export async function matchRoutes(app: FastifyInstance) {
           });
         }
 
-        // Validate winner ID
-        if (!winnerId) {
+        // Validate input: either a winner or a draw must be specified
+        if (!draw && !winnerId) {
           return reply.status(400).send({ 
             error: "Validation error",
-            message: "Winner ID is required" 
+            message: "Either winnerId or draw flag must be provided" 
           });
         }
 
-        if (!isValidUUID(winnerId)) {
+        if (winnerId && !isValidUUID(winnerId)) {
           return reply.status(400).send({ 
             error: "Validation error",
             message: "Invalid winner ID format" 
+          });
+        }
+
+        if (draw && winnerId) {
+          return reply.status(400).send({
+            error: "Validation error",
+            message: "Cannot specify both a winner and a draw"
           });
         }
 
@@ -228,27 +238,35 @@ export async function matchRoutes(app: FastifyInstance) {
           });
         }
 
-        // Determine which ranked id corresponds to winnerId
-        let player1Won: boolean;
         const ranked1Id = match.player1RankedId;
         const ranked2Id = match.player2RankedId;
 
-        if (winnerId === ranked1Id) {
-          player1Won = true;
-        } else if (winnerId === ranked2Id) {
-          player1Won = false;
+        // Determine match result and prepare for Elo calculation
+        let result: MatchResult;
+        let winnerRankedIdToStore: string | null = null;
+
+        if (draw) {
+          result = "draw";
         } else {
-          return reply.status(400).send({ 
-            error: "Validation error",
-            message: "Winner must be one of the match players (provide a ranked ID)" 
-          });
+          if (winnerId === ranked1Id) {
+            result = "player1";
+            winnerRankedIdToStore = ranked1Id;
+          } else if (winnerId === ranked2Id) {
+            result = "player2";
+            winnerRankedIdToStore = ranked2Id;
+          } else {
+            return reply.status(400).send({ 
+              error: "Validation error",
+              message: "Winner must be one of the match players (provide a ranked ID)" 
+            });
+          }
         }
 
         // Calculate ELO changes using ranked players' current elo
         const eloResult = calculateEloChange(
           match.player1Ranked.elo,
           match.player2Ranked.elo,
-          player1Won
+          result
         );
 
         // Update the match and ranked ELOs
@@ -256,7 +274,10 @@ export async function matchRoutes(app: FastifyInstance) {
           prisma.match.update({
             where: { id: matchId },
             data: {
-              winnerRankedId: player1Won ? ranked1Id : ranked2Id,
+              winnerRankedId: winnerRankedIdToStore,
+              draw: draw || false,
+              player1Score: request.body.player1Score ?? null,
+              player2Score: request.body.player2Score ?? null,
               player1EloChange: eloResult.player1Change,
               player2EloChange: eloResult.player2Change,
               completedAt: new Date(),
