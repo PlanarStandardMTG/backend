@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import { createJwtPayload, createUserResponse } from "../utils/prismaSelects.js";
 import { isValidEmail, isValidUsername, isValidPasswordHash } from "../utils/validation.js";
 import authRateLimit from "../plugins/authRateLimit.js";
+import { AuthenticatedRequest } from "../utils/auth.js";
 
 interface RegisterRequest {
     email: string;
@@ -179,6 +180,70 @@ export async function authRoutes(fastify: FastifyInstance) {
                 return reply.code(500).send({
                     error: "Internal server error",
                     message: "An error occurred during login"
+                });
+            }
+        }
+    );
+
+    // Delete account endpoint
+    fastify.delete(
+        "/delete",
+        {
+            onRequest: [fastify.authenticate]
+        },
+        async (request: AuthenticatedRequest, reply: FastifyReply) => {
+            try {
+                const userId = request.user.sub;
+
+                // Use transaction to ensure atomicity
+                await fastify.prisma.$transaction(async (tx) => {
+                    // Find user with rankedInfo
+                    const user = await tx.user.findUnique({
+                        where: { id: userId },
+                        include: { rankedInfo: true }
+                    });
+
+                    if (!user) {
+                        throw new Error("User not found");
+                    }
+
+                    if (user.rankedInfo) {
+                        // Check if connected to Challonge
+                        if (user.rankedInfo.connectionId) {
+                            // Delete ChallongeConnection
+                            await tx.challongeConnection.delete({
+                                where: { id: user.rankedInfo.connectionId }
+                            });
+                        }
+
+                        // Update RankedUserInfo to null userId and connectionId
+                        await tx.rankedUserInfo.update({
+                            where: { id: user.rankedInfo.id },
+                            data: {
+                                userId: null,
+                                connectionId: null
+                            }
+                        });
+                    }
+
+                    // Delete the user
+                    await tx.user.delete({
+                        where: { id: userId }
+                    });
+                });
+
+                return reply.code(204).send();
+            } catch (error) {
+                console.error("Account deletion error:", error);
+                if (error instanceof Error && error.message === "User not found") {
+                    return reply.code(404).send({
+                        error: "Not found",
+                        message: "User not found"
+                    });
+                }
+                return reply.code(500).send({
+                    error: "Internal server error",
+                    message: "An error occurred during account deletion"
                 });
             }
         }

@@ -31,6 +31,13 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
   ```
 - **Response:** User object with JWT token
 
+### Delete Account
+- **Endpoint:** `DELETE /api/auth/delete`
+- **Protection:** Protected (requires authentication)
+- **Description:** Permanently delete the authenticated user's account. If the user has a RankedUserInfo connected to Challonge, the ChallongeConnection is deleted and the RankedUserInfo is decoupled from the user and connection.
+- **Request Body:** None
+- **Response:** 204 No Content on success
+
 ## User Endpoints (`/api/users`)
 
 ### Get Current User
