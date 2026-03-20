@@ -121,7 +121,7 @@ export async function adminRoutes(app: FastifyInstance) {
     async (request, reply) => {
       try {
         const tournaments = await prisma.tournament.findMany({
-          where: { ratingsUpdated: false, state: "complete" },
+          where: { ratingsUpdated: false, state: "complete", name: { contains: "Monthly" } },
           orderBy: { startsAt: "asc" },
         });
 
@@ -205,6 +205,8 @@ export async function adminRoutes(app: FastifyInstance) {
                 : winnerRankedId === ranked2Id
                 ? "player2"
                 : "draw";
+            
+            const [p1Score, p2Score] = m.attributes.scores.split("-").map((s: string) => parseInt(s.trim()));
 
             // calculate elo & persist match using ranked elo values
             const eloResult = calculateEloChange(
@@ -218,11 +220,14 @@ export async function adminRoutes(app: FastifyInstance) {
                 data: {
                   player1RankedId: ranked1Id,
                   player2RankedId: ranked2Id,
+                  player1Score: p1Score,
+                  player2Score: p2Score,
                   winnerRankedId,
                   draw: result === "draw",
                   player1EloChange: eloResult.player1Change,
                   player2EloChange: eloResult.player2Change,
                   completedAt: winnerRankedId || result === "draw" ? new Date() : null,
+                  tournamentId: t.id,
                 },
               }),
               prisma.rankedUserInfo.update({
