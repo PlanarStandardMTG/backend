@@ -23,7 +23,8 @@ export function buildServer() {
     app.register(cors, {
         origin: [
             "http://localhost:5173",
-            "https://planarstandardmtg.vercel.app"
+            "https://planarstandardmtg.vercel.app",
+            "https://planarstandard.com"
         ],
         methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
         allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
