@@ -80,7 +80,7 @@ model RankedUserInfo {
   userId           String?   @unique
   connectionId     String?   @unique
   username         String    @unique
-  elo              Int       @default(1600)
+  elo              Int       @default(1000)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

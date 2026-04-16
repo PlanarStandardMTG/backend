@@ -55,7 +55,7 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
   {
     "username": "playerName",
     "rankedInfoId": "ranked_info_id_or_null",
-    "elo": 1600
+    "elo": 1000
   }
   ```
 

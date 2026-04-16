@@ -85,8 +85,8 @@ export function calculateMatchWins(
 
 /**
  * Calculate the expected rating for a new user
- * Standard starting ELO is 1600
+ * Standard starting ELO is 1000
  */
 export function getNewUserElo(): number {
-  return 1600;
+  return 1000;
 }

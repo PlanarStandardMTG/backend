@@ -6,7 +6,7 @@
 Updated the Prisma schema to support the ELO system:
 - **User Model Enhancements:**
   - Added `username` field (unique)
-  - Added `elo` field (default: 1600)
+  - Added `elo` field (default: 1000)
   - Added `updatedAt` timestamp field
   - Added relationships to Match model (as both player1 and player2)
 
@@ -23,7 +23,7 @@ Updated the Prisma schema to support the ELO system:
 ### 3. ✅ ELO Calculation System
 Created [src/utils/elo.ts](src/utils/elo.ts) with:
 - `calculateEloChange()` - Calculates new ELO ratings using standard chess ELO formula
-- `getNewUserElo()` - Returns starting ELO (1600)
+- `getNewUserElo()` - Returns starting ELO (1000)
 - K-factor of 32 for consistent rating changes
 - Expected score calculation based on rating difference
 
@@ -61,7 +61,7 @@ For complete API documentation including all endpoints, request/response formats
 
 ## ELO System Details
 
-- **Starting Rating:** 1600
+- **Starting Rating:** 1000
 - **K-Factor:** 32 (standard for active players)
 - **Formula:** Uses standard chess ELO calculation
   - Expected score based on rating difference
@@ -75,7 +75,7 @@ For complete API documentation including all endpoints, request/response formats
 - `email` (unique)
 - `username` (unique) ✨ NEW
 - `password`
-- `elo` (default: 1600) ✨ NEW
+- `elo` (default: 1000) ✨ NEW
 - `createdAt`
 - `updatedAt` ✨ NEW
 

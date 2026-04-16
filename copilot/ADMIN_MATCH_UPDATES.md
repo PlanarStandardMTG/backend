@@ -26,7 +26,7 @@ This document explains what changed and how to update your React (TypeScript) fr
 const playerElo = user.elo;
 
 // ✅ NEW (correct)
-const playerElo = user.rankedInfo?.elo ?? 1600;
+const playerElo = user.rankedInfo?.elo ?? 1000;
 ```
 
 **Affected User API Endpoints:**
@@ -216,7 +216,7 @@ async function syncTournamentMatches() {
 **`GET /api/dashboard/stats/:userId`** & **`GET /api/dashboard/stats/me`**
 
 **Changes:**
-- ELO defaults to `1600` if no ranked record exists
+- ELO defaults to `1000` if no ranked record exists
 - Fetches matches via ranked ID when available
 - Opponent info includes ranked ELO
 
@@ -226,7 +226,7 @@ async function syncTournamentMatches() {
   id: string;
   username: string;
   email: string;
-  elo: number;                    // ← 1600 default, from rankedInfo
+  elo: number;                    // ← 1000 default, from rankedInfo
   totalMatches: number;
   wins: number;
   losses: number;
@@ -292,7 +292,7 @@ Challonge Participant
 
 ## 💡 Migration Checklist for Frontend
 
-- [ ] Replace all `user.elo` with `user.rankedInfo?.elo ?? 1600`
+- [ ] Replace all `user.elo` with `user.rankedInfo?.elo ?? 1000`
 - [ ] Update leaderboard to use `RankedUserInfo` structure
 - [ ] Update stats displays to pull ELO from ranked info
 - [ ] Add admin button to trigger `POST /api/admin/tournaments/sync-matches`

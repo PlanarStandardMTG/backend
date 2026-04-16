@@ -23,8 +23,8 @@ export async function getOrCreateRankedForUser(userId: string) {
       data: {
         userId,
         username: user.username,
-        // user elo column removed; default to 1600 for new ranked entries
-        elo: 1600,
+        // user elo column removed; default to 1000 for new ranked entries
+        elo: 1000,
       },
     });
 

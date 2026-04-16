@@ -29,7 +29,7 @@ export async function userRoutes(fastify: FastifyInstance) {
                 // merge elo from rankedInfo if available
                 const response = createUserResponse({
                     ...user,
-                    elo: ranked?.elo ?? 1600
+                    elo: ranked?.elo ?? 1000
                 });
                 return response;
             } catch (error) {
@@ -71,7 +71,7 @@ export async function userRoutes(fastify: FastifyInstance) {
                 return {
                     username: user.username,
                     rankedInfoId: ranked?.id ?? null,
-                    elo: ranked?.elo ?? 1600
+                    elo: ranked?.elo ?? 1000
                 };
             } catch (error) {
                 console.error("Get user by id error:", error);
@@ -116,7 +116,7 @@ export async function userRoutes(fastify: FastifyInstance) {
                 return {
                     username: ranked.username,
                     userId: user?.id ?? null,
-                    elo: ranked?.elo ?? 1600
+                    elo: ranked?.elo ?? 1000
                 };
             } catch (error) {
                 console.error("Get ranked user by id error:", error);

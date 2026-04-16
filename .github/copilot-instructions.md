@@ -17,7 +17,7 @@ This is a **Fastify + Prisma + TypeScript** backend for an MTG tournament ELO tr
 - **Migration workflow**: After schema changes, run `prisma migrate dev --name <descriptive_name>` (or use the `prisma-migrate-dev` tool)
 - **⚠️ CRITICAL: NEVER run `prisma migrate reset`** - This project uses the PRODUCTION database for development. Running migrate reset will DELETE ALL PRODUCTION DATA. If migration drift occurs, manually fix the drift or consult the user.
 - **Schema pattern**: User model has dual Match relations (`@relation("player1")` and `@relation("player2")`) - both are required for bi-directional match tracking
-- **Default ELO**: New users start at 1600 ELO (see [src/utils/elo.ts](src/utils/elo.ts))
+- **Default ELO**: New users start at 1000 ELO (see [src/utils/elo.ts](src/utils/elo.ts))
 
 ### Authentication & Authorization
 - **JWT payload structure**: `{ sub: string, email: string }` (see type declaration in [src/plugins/auth.ts](src/plugins/auth.ts))
