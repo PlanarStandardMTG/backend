@@ -66,37 +66,52 @@ export async function fetchTournamentParticipants(tournamentId: string): Promise
     return cached;
   }
 
-  // Fetch from API
-  try {
-    const participantsResponse = await fetch(
-      `${CHALLONGE_API_BASE}/tournaments/${tournamentId}/participants.json`,
-      {
-        method: 'GET',
-        headers: {
-          'Authorization-Type': 'v1',
-          'Authorization': CHALLONGE_CONFIG.apiKey,
-          'Content-Type': 'application/vnd.api+json',
-          'Accept': 'application/json',
-        },
-      }
-    );
+  // Fetch from API with pagination
+  const allParticipants: ParticipantCacheEntry['data'] = [];
+  let page = 1;
+  const perPage = 50;
 
-    if (!participantsResponse.ok) {
+  while (page <= 10) {
+    try {
+      const participantsResponse = await fetch(
+        `${CHALLONGE_API_BASE}/tournaments/${tournamentId}/participants.json?page=${page}&per_page=${perPage}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization-Type': 'v1',
+            'Authorization': CHALLONGE_CONFIG.apiKey,
+            'Content-Type': 'application/vnd.api+json',
+            'Accept': 'application/json',
+          },
+        }
+      );
+
+      if (!participantsResponse.ok) {
+        return null;
+      }
+
+      const participantsData = await participantsResponse.json() as {
+        data: ParticipantCacheEntry['data'];
+      };
+
+      const participants = participantsData.data;
+
+      if (participants.length === 0) {
+        break;
+      }
+
+      allParticipants.push(...participants);
+      page++;
+    } catch (error) {
+      console.error('Error fetching participants:', error);
       return null;
     }
-
-    const participantsData = await participantsResponse.json() as {
-      data: ParticipantCacheEntry['data'];
-    };
-
-    // Cache the result
-    setCachedParticipants(tournamentId, participantsData.data);
-
-    return participantsData.data;
-  } catch (error) {
-    console.error('Error fetching participants:', error);
-    return null;
   }
+
+  // Cache the result
+  setCachedParticipants(tournamentId, allParticipants);
+
+  return allParticipants;
 }
 
 // Helper to resolve the user's ChallongeConnection via their RankedUserInfo record
