@@ -58,6 +58,22 @@ function invalidateParticipantsCache(tournamentId: string): void {
   participantsCache.delete(tournamentId);
 }
 
+// Cache for tournament list to handle API rate limiting
+let lastTournamentsSyncTime: number | null = null;
+const TOURNAMENTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function isTournamentCacheExpired(): boolean {
+  if (lastTournamentsSyncTime === null) {
+    return true; // No sync has occurred yet
+  }
+  return Date.now() - lastTournamentsSyncTime > TOURNAMENTS_CACHE_TTL;
+}
+
+function cacheTournaments(): void {
+  lastTournamentsSyncTime = Date.now();
+  console.log('[TOURNAMENTS] Cache refreshed at', new Date(lastTournamentsSyncTime).toISOString());
+}
+
 // Helper function to fetch tournament participants (with caching)
 export async function fetchTournamentParticipants(tournamentId: string): Promise<ParticipantCacheEntry['data'] | null> {
   // Check cache first
@@ -598,11 +614,68 @@ export default async function challongeRoutes(app: FastifyInstance) {
   app.get('/tournaments', {
     handler: async (request: FastifyRequest, reply) => {
       try {
+        // Check if cache is still valid - if so, return from database without hitting API
+        if (!isTournamentCacheExpired()) {
+          console.log('[TOURNAMENTS] Cache is fresh, returning from database');
+          const cachedTournaments = await prisma.tournament.findMany({
+            where: {
+              name: { not: { contains: '[TEST]' } },
+            },
+            orderBy: { createdAt: 'asc' },
+          });
+
+          // Enrich with participation data if authenticated
+          const enrichedTournaments = await Promise.all(
+            cachedTournaments.map(async (tournament) => {
+              let isParticipant = false;
+              let userChallongeUsername: string | null = null;
+
+              try {
+                await request.jwtVerify();
+                const conn = await getConnectionForUser(request.user.sub);
+                const userConnection = conn ? { challongeUsername: conn.challongeUsername } : null;
+
+                if (userConnection?.challongeUsername) {
+                  try {
+                    const participants = await fetchTournamentParticipants(tournament.challongeId);
+                    if (participants) {
+                      const participant = participants.find(
+                        (p) => p.attributes.username === userConnection.challongeUsername ||
+                              p.attributes.name === userConnection.challongeUsername
+                      );
+                      if (participant) {
+                        isParticipant = true;
+                        userChallongeUsername = userConnection.challongeUsername;
+                      }
+                    }
+                  } catch (error) {
+                    console.warn(`Failed to fetch participants for tournament ${tournament.challongeId}:`, error);
+                  }
+                }
+              } catch (error) {
+                // Unauthenticated request - skip participation check
+              }
+
+              return {
+                ...tournament,
+                isParticipant,
+                userChallongeUsername,
+              };
+            })
+          );
+
+          return reply.send({
+            tournaments: enrichedTournaments,
+            count: enrichedTournaments.length,
+          });
+        }
+
         if (!CHALLONGE_CONFIG.apiKey || CHALLONGE_CONFIG.apiKey === 'YOUR_CHALLONGE_API_KEY') {
           return reply.status(500).send({ error: 'Challonge API key not configured' });
         }
 
         // Fetch tournaments from Challonge API using app's API key
+        console.log('[TOURNAMENTS] Cache expired or not initialized, fetching from Challonge API');
         const tournamentsResponse = await fetch(`${CHALLONGE_API_BASE}/tournaments.json`, {
           method: 'GET',
           headers: {
@@ -614,12 +687,72 @@ export default async function challongeRoutes(app: FastifyInstance) {
         });
 
         if (!tournamentsResponse.ok) {
+          // Handle rate limit error by falling back to cached data
+          if (tournamentsResponse.status === 429) {
+            console.warn('[TOURNAMENTS] Received 429 Too Many Requests from Challonge API, falling back to cached data');
+            const cachedTournaments = await prisma.tournament.findMany({
+              where: {
+                name: { not: { contains: '[TEST]' } },
+              },
+              orderBy: { createdAt: 'asc' },
+            });
+
+            // Enrich with participation data if authenticated
+            const enrichedTournaments = await Promise.all(
+              cachedTournaments.map(async (tournament) => {
+                let isParticipant = false;
+                let userChallongeUsername: string | null = null;
+
+                try {
+                  await request.jwtVerify();
+                  const conn = await getConnectionForUser(request.user.sub);
+                  const userConnection = conn ? { challongeUsername: conn.challongeUsername } : null;
+
+                  if (userConnection?.challongeUsername) {
+                    try {
+                      const participants = await fetchTournamentParticipants(tournament.challongeId);
+                      if (participants) {
+                        const participant = participants.find(
+                          (p) => p.attributes.username === userConnection.challongeUsername ||
+                                p.attributes.name === userConnection.challongeUsername
+                        );
+                        if (participant) {
+                          isParticipant = true;
+                          userChallongeUsername = userConnection.challongeUsername;
+                        }
+                      }
+                    } catch (error) {
+                      console.warn(`Failed to fetch participants for tournament ${tournament.challongeId}:`, error);
+                    }
+                  }
+                } catch (error) {
+                  // Unauthenticated request - skip participation check
+                }
+
+                return {
+                  ...tournament,
+                  isParticipant,
+                  userChallongeUsername,
+                };
+              })
+            );
+
+            return reply.send({
+              tournaments: enrichedTournaments,
+              count: enrichedTournaments.length,
+              source: 'cache',
+            });
+          }
+
           const errorText = await tournamentsResponse.text();
           console.error('Failed to fetch tournaments:', errorText);
           return reply.status(tournamentsResponse.status).send({ 
             error: 'Failed to fetch tournaments from Challonge' 
           });
         }
+
+        // Update cache timestamp after successful API call
+        cacheTournaments();
 
         const tournamentsData = await tournamentsResponse.json() as {
           data: Array<{

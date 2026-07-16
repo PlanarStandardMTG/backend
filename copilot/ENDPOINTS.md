@@ -382,10 +382,16 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
 
 ### Get All Tournaments
 - **Endpoint:** `GET /api/challonge/tournaments`
-- **Protection:** Protected (requires authentication)
-- **Description:** Fetch all tournaments associated with the app from Challonge API (using API key) and sync to local database. All authenticated users can view these tournaments. Includes participation status for the current user.
-- **Note:** Uses app's API key (not user OAuth) to fetch app-wide tournaments. Checks if user is a participant by comparing their Challonge username.
-- **Response:**
+- **Protection:** Public (unauthenticated requests allowed, but participation data only included for authenticated users)
+- **Description:** Fetch all tournaments associated with the app. Implements a 5-minute cache to respect Challonge API rate limits. On cache hit, returns tournaments from the local database. On cache miss, fetches from Challonge API (using app's API key) and syncs to local database. If Challonge returns a 429 (Too Many Requests), gracefully falls back to cached database tournaments.
+- **Caching Behavior:**
+  - **Cache Duration:** 5 minutes
+  - **Cache Hit:** Returns tournaments from database without calling Challonge API (includes `count` only, no `source` field)
+  - **Cache Miss + API Success:** Fetches from Challonge API, updates local database, returns tournaments
+  - **Cache Miss + API 429 Rate Limit:** Falls back to database tournaments, includes `"source": "cache"` in response to indicate stale data
+- **Participation Tracking:** If authenticated, includes `isParticipant` and `userChallongeUsername` fields. Only authenticated requests with a connected Challonge account will have participation status.
+- **Note:** Uses app's API key (not user OAuth) to fetch app-wide tournaments. Unauthenticated requests will not have participation data but will receive the full tournament list.
+- **Response (Cache Hit or Successful API Call):**
   ```json
   {
     "tournaments": [
@@ -408,6 +414,32 @@ Complete reference of all available API endpoints in the PlanarStandardMTG backe
       }
     ],
     "count": 1
+  }
+  ```
+- **Response (API Rate Limited - 429 Fallback):**
+  ```json
+  {
+    "tournaments": [
+      {
+        "id": "local_db_id",
+        "challongeId": "challonge_tournament_id",
+        "userId": null,
+        "name": "Weekly Tournament #5",
+        "tournamentType": "single elimination",
+        "url": "weekly-tournament-5",
+        "state": "pending",
+        "startsAt": "2026-01-25T18:00:00Z",
+        "gameName": "Magic: The Gathering",
+        "participantCount": 16,
+        "lastSyncedAt": "2026-01-22T10:00:00Z",
+        "createdAt": "2026-01-22T10:00:00Z",
+        "updatedAt": "2026-01-22T10:00:00Z",
+        "isParticipant": true,
+        "userChallongeUsername": "player123"
+      }
+    ],
+    "count": 1,
+    "source": "cache"
   }
   ```
 
