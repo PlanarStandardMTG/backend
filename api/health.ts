@@ -5,7 +5,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
  * more, comma-separated.
  *
  * Inline because a function importing from `src/` crashes on Vercel today
- * (ERR_REQUIRE_ESM); EM1.4 bundles the app and moves this into middleware.
+ * (see EM1.4's note); EM1.4 bundles the app and moves this into middleware.
  */
 const ORIGINS = [
   "http://localhost:5173",

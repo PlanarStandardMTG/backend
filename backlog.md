@@ -50,10 +50,11 @@ workflow running lint, test and build.
 ⬜ **EM1.4 — Hono app and local dev** · M · api · Deps: EM1.2 — `src/http` as a Hono app mounted by one
 catch-all Vercel function, `pnpm dev` serving it on :3000, `/api/health` kept, CORS moved into
 middleware. _AC:_ the UI's health check passes against `pnpm dev` and against a preview deploy.
-_Note:_ today a Vercel function that imports from `src/` crashes with `ERR_REQUIRE_ESM`: Vercel's
-per-file transpile emits the entry as CommonJS while `"type": "module"` loads `src/` as ESM. A
-function with no imports runs. Bundle the entry at build time (e.g. tsup into `api/`), or find the
-setting that makes Vercel emit ESM, before anything else imports across.
+_Note:_ today Vercel runs each `api/*.js` as CommonJS whatever `"type": "module"` says, so ESM
+output fails (`Unexpected token 'export'`) and a function importing from `src/` fails too
+(`ERR_REQUIRE_ESM`). A self-contained function compiled under `nodenext` runs. Bundle the entry at
+build time (e.g. tsup to one CJS file per function), or move the API to CommonJS, before anything
+imports across.
 
 ⬜ **EM1.5 — Clear the legacy database and start migrations** · M · api · Deps: EM1.4 — back up the
 old site's Neon tables, drop them, and set up Drizzle with a first empty migration. Local dev uses a
