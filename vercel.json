@@ -1,7 +1,3 @@
 {
-  "version": 2,
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.ts" },
-    { "source": "/(.*)", "destination": "/api/index.ts" }
-  ]
+  "rewrites": [{ "source": "/", "destination": "/api/health" }]
 }
