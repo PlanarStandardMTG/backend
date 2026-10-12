@@ -81,7 +81,7 @@ The repo names `backend` and `frontend` no longer say what the repos are. Renami
 | Where | Variable                                      | Notes                                                   |
 | ----- | --------------------------------------------- | ------------------------------------------------------- |
 | API   | `DATABASE_URL`                                | Already set by the Neon integration                     |
-| API   | `FRONTEND_URL`                                | Extra CORS origins, comma-separated (`src/cors.ts`)     |
+| API   | `FRONTEND_URL`                                | Extra CORS origins, comma-separated (`api/health.ts`)   |
 | API   | `SUPABASE_URL`                                | planarstandard.com's project, to fetch its JWKS (EM2.2) |
 | API   | `EXPORT_TOKEN`                                | Shared with the main site, which reads exports (EM10.1) |
 | UI    | `VITE_API_URL`                                | The events API                                          |

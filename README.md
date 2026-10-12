@@ -10,7 +10,7 @@ rounds, record results and hand the finished event to [planarstandard.com](https
 
 ## Today
 
-One endpoint, `GET /api/health`, and the CORS allow-list in `src/cors.ts`. A push to `main` deploys
+One endpoint, `GET /api/health`, with its CORS allow-list. A push to `main` deploys
 to Vercel. A local server arrives with EM1.4.
 
 ```bash
