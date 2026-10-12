@@ -20,9 +20,8 @@ function allowedOrigins(): Set<string> {
 }
 
 /** CORS headers for a request's origin, or none when it isn't allowed. */
-export function corsHeaders(request: Request): Record<string, string> {
-  const origin = request.headers.get("origin");
-  if (origin === null || !allowedOrigins().has(origin)) return {};
+export function corsHeaders(origin: string | undefined): Record<string, string> {
+  if (origin === undefined || !allowedOrigins().has(origin)) return {};
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
